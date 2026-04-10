@@ -427,7 +427,7 @@ const msalConfig = {
   auth: {
     clientId: CLIENT_ID,
     authority: `https://login.microsoftonline.com/${TENANT_ID}`,
-    redirectUri: "https://ordergenerator.pages.dev",
+    redirectUri: "https://gabrielg98msk.github.io/order-generator",
     navigateToLoginRequestUrl: true,
   },
   cache: { cacheLocation: "localStorage", storeAuthStateInCookie: true }
@@ -480,7 +480,7 @@ async function signIn() {
   try {
     await msalInstance.loginRedirect({
       scopes: SCOPES,
-      redirectUri: "https://ordergenerator.pages.dev"
+      redirectUri: "https://gabrielg98msk.github.io/order-generator"
     });
   } catch(e) {
     showLoginError('Sign in failed: ' + e.message);
@@ -489,7 +489,7 @@ async function signIn() {
 
 function signOut() {
   msalInstance.logoutRedirect({
-    postLogoutRedirectUri: "https://ordergenerator.pages.dev"
+    postLogoutRedirectUri: "https://gabrielg98msk.github.io/order-generator"
   });
 }
 
