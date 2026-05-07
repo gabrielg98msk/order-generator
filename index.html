@@ -173,6 +173,7 @@ header p{font-size:11px;color:#94a3b8;margin-top:1px;}
     </div>
   </header>
 
+  <div id="ordersContent">
   <div class="wrap">
 
     <!-- Patient Card -->
@@ -325,6 +326,7 @@ header p{font-size:11px;color:#94a3b8;margin-top:1px;}
   </div>
 
   </div><!-- /wrap -->
+  </div><!-- /ordersContent -->
   <!-- NOTIFICATIONS PANEL -->
   <div id="notifPanel" style="display:none;max-width:900px;margin:0 auto 40px;padding:0 16px;">
     <div style="background:white;border:1px solid var(--border);border-radius:var(--radius);overflow:hidden;">
@@ -1321,28 +1323,12 @@ let _userInitials = 'XX';
 
 function showTab(tab) {
   const isOrders = tab === 'orders';
-
-  // Hide/show everything inside screen-app except header and notifPanel
-  const screenApp = document.getElementById('screen-app');
-  if (!screenApp) return;
-
-  Array.from(screenApp.children).forEach(el => {
-    if (el.tagName === 'HEADER') return; // always keep header
-    if (el.id === 'notifPanel') {
-      el.style.display = isOrders ? 'none' : 'block';
-    } else {
-      // Orders content — wrap, toolbars, format toggle, etc.
-      el.style.display = isOrders ? '' : 'none';
-    }
-  });
-
-  // Update tab button styles
+  document.getElementById('ordersContent').style.display = isOrders ? 'contents' : 'none';
+  document.getElementById('notifPanel').style.display   = isOrders ? 'none' : 'block';
   const tO = document.getElementById('tabOrders');
   const tN = document.getElementById('tabNotif');
   if (tO) { tO.style.background = isOrders ? 'white' : 'transparent'; tO.style.color = isOrders ? 'var(--navy)' : 'rgba(255,255,255,.7)'; }
   if (tN) { tN.style.background = isOrders ? 'transparent' : 'white'; tN.style.color = isOrders ? 'rgba(255,255,255,.7)' : 'var(--navy)'; }
-
-  // Auto-load notifications on first visit
   if (!isOrders && Object.keys(_notifData).length === 0) loadNotifications();
 }
 
