@@ -157,6 +157,16 @@ header p{font-size:11px;color:#94a3b8;margin-top:1px;}
       </div>
     </div>
     <div class="hdr-right">
+      <div style="display:flex;background:rgba(255,255,255,.1);border-radius:6px;padding:2px;gap:1px;margin-right:8px;">
+        <button id="tabOrders" onclick="showTab('orders')"
+          style="padding:5px 12px;border:none;border-radius:4px;font-family:inherit;font-size:11px;font-weight:600;cursor:pointer;background:white;color:var(--navy);">
+          Orders
+        </button>
+        <button id="tabNotif" onclick="showTab('notif')"
+          style="padding:5px 12px;border:none;border-radius:4px;font-family:inherit;font-size:11px;font-weight:600;cursor:pointer;background:transparent;color:rgba(255,255,255,.7);">
+          Notifications
+        </button>
+      </div>
       <span class="data-badge" id="dataBadge">Loading…</span>
       <span class="user-pill" id="userName"></span>
       <button class="signout-btn" onclick="signOut()">Sign out</button>
@@ -233,6 +243,16 @@ header p{font-size:11px;color:#94a3b8;margin-top:1px;}
         <div class="field"><label>Phone</label><input id="provPhone" placeholder="(000) 000-0000"></div>
         <div class="field"><label>Fax</label><input id="provFax" placeholder="(000) 000-0000"></div>
       </div>
+      <!-- Save provider button -->
+      <div style="margin-top:12px;padding-top:12px;border-top:1px solid var(--border);">
+        <button onclick="saveProviderToList()" id="saveProvBtn"
+          style="width:100%;padding:7px;border:1px dashed var(--border);border-radius:5px;background:transparent;font-family:inherit;font-size:12px;font-weight:500;color:var(--muted);cursor:pointer;transition:all .15s;"
+          onmouseover="this.style.borderColor='var(--blue)';this.style.color='var(--blue)'"
+          onmouseout="this.style.borderColor='var(--border)';this.style.color='var(--muted)'">
+          + Save this provider to the list
+        </button>
+        <div id="saveProvStatus" style="font-size:11px;text-align:center;margin-top:6px;display:none;"></div>
+      </div>
     </div>
 
     <!-- Order Details -->
@@ -305,6 +325,49 @@ header p{font-size:11px;color:#94a3b8;margin-top:1px;}
   </div>
 
   </div><!-- /wrap -->
+  <!-- NOTIFICATIONS PANEL -->
+  <div id="notifPanel" style="display:none;max-width:900px;margin:0 auto 40px;padding:0 16px;">
+    <div style="background:white;border:1px solid var(--border);border-radius:var(--radius);overflow:hidden;">
+      <div style="background:var(--navy);padding:14px 18px;display:flex;align-items:center;justify-content:space-between;">
+        <div>
+          <div style="color:white;font-weight:600;font-size:14px;">Patient Notifications</div>
+          <div style="color:#94a3b8;font-size:11px;margin-top:2px;">Patients pending notification — matched to provider contact info</div>
+        </div>
+        <button onclick="loadNotifications()" id="refreshNotifBtn"
+          style="padding:6px 14px;background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.2);border-radius:5px;color:white;font-size:11px;font-family:inherit;cursor:pointer;">
+          Refresh
+        </button>
+      </div>
+      <div style="padding:12px 16px;border-bottom:1px solid var(--border);display:flex;gap:10px;align-items:center;">
+        <input id="notifSearch" placeholder="Filter by patient name..." oninput="filterNotifications()"
+          style="flex:1;padding:6px 10px;border:1px solid var(--border);border-radius:5px;font-size:12px;font-family:inherit;outline:none;">
+        <span id="notifCount" style="font-size:11px;color:var(--muted);white-space:nowrap;"></span>
+      </div>
+      <div id="notifList" style="max-height:600px;overflow-y:auto;">
+        <div style="padding:40px;text-align:center;color:var(--muted);font-size:13px;">Click Refresh to load pending notifications</div>
+      </div>
+    </div>
+    <!-- Message modal -->
+    <div id="msgModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:200;align-items:center;justify-content:center;">
+      <div style="background:white;border-radius:12px;padding:24px;width:520px;max-width:90vw;box-shadow:0 20px 60px rgba(0,0,0,.3);">
+        <div style="font-weight:600;font-size:15px;color:var(--navy);margin-bottom:4px;">Patient Message</div>
+        <div id="msgPatientLabel" style="font-size:11px;color:var(--muted);margin-bottom:16px;"></div>
+        <textarea id="msgText" rows="7"
+          style="width:100%;padding:10px;border:1px solid var(--border);border-radius:6px;font-size:13px;font-family:inherit;resize:vertical;outline:none;line-height:1.6;"></textarea>
+        <div style="margin-top:12px;display:flex;gap:10px;justify-content:flex-end;">
+          <button onclick="closeMsg()"
+            style="padding:8px 16px;border:1px solid var(--border);border-radius:6px;background:white;font-family:inherit;font-size:12px;cursor:pointer;">
+            Close
+          </button>
+          <button onclick="copyMsg()"
+            style="padding:8px 20px;background:var(--navy);color:white;border:none;border-radius:6px;font-family:inherit;font-size:12px;font-weight:600;cursor:pointer;">
+            Copy Message
+          </button>
+        </div>
+        <div id="copiedLabel" style="text-align:center;font-size:11px;color:var(--green);margin-top:8px;display:none;">Copied to clipboard!</div>
+      </div>
+    </div>
+  </div>
 </div><!-- /screen-app -->
 
 <div class="toast" id="toast">✓ Order downloaded</div>
@@ -1241,6 +1304,349 @@ async function generateOrder() {
   btn.disabled = false;
   btn.innerHTML = `<svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M2.5 8l3.5 3.5 7.5-7" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg> Generate Order (.docx)`;
 }
+
+// ════════════════════════════════
+//  NOTIFICATIONS
+// ════════════════════════════════
+let _notifData = [];
+let _notifFiltered = [];
+
+function showTab(tab) {
+  const isOrders = tab === 'orders';
+  const wrap = document.querySelector('.wrap');
+  if (wrap) wrap.style.display = isOrders ? 'grid' : 'none';
+  const toolbars = document.querySelectorAll('.wrap ~ div');
+  toolbars.forEach(t => { if (t.id !== 'notifPanel') t.style.display = isOrders ? 'flex' : 'none'; });
+  document.getElementById('notifPanel').style.display = isOrders ? 'none' : 'block';
+  const tO = document.getElementById('tabOrders');
+  const tN = document.getElementById('tabNotif');
+  tO.style.background = isOrders ? 'white' : 'transparent';
+  tO.style.color = isOrders ? 'var(--navy)' : 'rgba(255,255,255,.7)';
+  tN.style.background = isOrders ? 'transparent' : 'white';
+  tN.style.color = isOrders ? 'rgba(255,255,255,.7)' : 'var(--navy)';
+  if (!isOrders && _notifData.length === 0) loadNotifications();
+}
+
+async function loadNotifications() {
+  const btn = document.getElementById('refreshNotifBtn');
+  const list = document.getElementById('notifList');
+  btn.textContent = 'Loading...';
+  list.innerHTML = '<div style="padding:40px;text-align:center;color:var(--muted);">Loading...</div>';
+  try {
+    const token = await getToken();
+    const resp = await fetch(
+      `https://graph.microsoft.com/v1.0/drives/${DRIVE_ID}/items/${FILE_ID}/workbook/worksheets/${encodeURIComponent(SHEET_NAME)}/usedRange`,
+      { headers: { Authorization: `Bearer ${token}` } }
+    );
+    const data = await resp.json();
+    if (!data.values) throw new Error('No data');
+    const rows = data.values;
+    const H = rows[0].map(h => (h||'').toLowerCase());
+    const idx = {
+      name:     H.findIndex(h => h.includes('name') && !h.includes('provider') && !h.includes('rendering')),
+      phone:    H.findIndex(h => h.includes('phone')),
+      ins:      H.findIndex(h => h.includes('insur')),
+      specialty:H.findIndex(h => h.includes('specialty') || h.includes('dme')),
+      provider: H.findIndex(h => h.includes('rendering') || (h.includes('provider') && !h.includes('name'))),
+      notes:    H.findIndex(h => h.includes('notes')),
+    };
+    _notifData = rows.slice(1)
+      .filter(r => {
+        const notes = (r[idx.notes]||'').toString().toUpperCase();
+        const name  = (r[idx.name]||'').toString().trim();
+        return name && notes.includes('INFORM') && !notes.includes('INFORMED');
+      })
+      .map(r => {
+        const provAbbr = (r[idx.provider]||'').toString().trim();
+        return {
+          name:      (r[idx.name]||'').toString().trim(),
+          phone:     (r[idx.phone]||'').toString().trim(),
+          insurance: (r[idx.ins]||'').toString().trim(),
+          specialty: (r[idx.specialty]||'').toString().trim(),
+          provAbbr,
+          matchedProv: matchNotifProvider(provAbbr),
+          notes:     (r[idx.notes]||'').toString().trim(),
+        };
+      });
+    _notifFiltered = [..._notifData];
+    document.getElementById('notifCount').textContent = `${_notifData.length} pending`;
+    renderNotifications();
+  } catch(e) {
+    list.innerHTML = `<div style="padding:30px;text-align:center;color:var(--red);">Error: ${e.message}</div>`;
+  }
+  btn.textContent = 'Refresh';
+}
+
+function matchNotifProvider(abbr) {
+  // Returns { match, ambiguous, candidates }
+  // match = single provider if exactly 1 found
+  // ambiguous = true if multiple found (user must pick)
+  // candidates = all matches
+  if (!abbr || !window._spProviders) return { match: null, ambiguous: false, candidates: [] };
+  const a = abbr.toUpperCase().trim();
+  const ABBR_MAP = {
+    'SS':'SPINE AND SPORT', 'GG':'GRIMALDI', 'HANGER':'HANGER', 'NEXUS':'NEXUS',
+    'NAVARRO':'NAVARRO', 'SYNOVATION':'SYNOV', 'IHS':'IHS', 'MOLES':'MOLES',
+    'KOTHA':'KOTHA', 'CHITKARA':'CHITKARA', 'MALIK':'MALIK',
+    'CASTILLEJOS':'CASTILLEJOS', 'SANDLER':'SANDLER', 'STEINER':'STEINER',
+    'NATARAJAN':'NATARAJAN', 'MOHAMMAD':'MOHAMMAD', 'GRIMALDI':'GRIMALDI',
+    'COHEN':'COHEN', 'JACOBS':'JACOBS', 'AMMIRATI':'AMMIRATI',
+    'ABDULHADI':'ABDULHADI', 'VERDOLIN':'VERDOLIN', 'WYNN':'WYNN',
+    'DAIRO':'DAIRO', 'EGGLETON':'EGGLETON', 'SOUTHBAY':'SOUTHBAY',
+    'ORTHOFIX':'ORTHOFIX', 'GAO':'GAO', 'MUSICANT':'MUSICANT',
+    'ARGOUD':'ARGOUD', 'DELUXE':'DELUXE', 'BAZILE':'BAZILE', 'FIRST':'FIRST',
+    'MABAQUIAO':'MABAQUIAO', 'SBNS':'SBNS',
+  };
+  const keyword = ABBR_MAP[a] || a;
+  const candidates = window._spProviders.filter(p =>
+    p.display.toUpperCase().includes(keyword) ||
+    p.name.toUpperCase().includes(keyword)
+  );
+  if (candidates.length === 0) return { match: null, ambiguous: false, candidates: [] };
+  if (candidates.length === 1) return { match: candidates[0], ambiguous: false, candidates };
+  // Multiple matches — ambiguous, user must choose
+  return { match: null, ambiguous: true, candidates };
+}
+
+function filterNotifications() {
+  const q = document.getElementById('notifSearch').value.toLowerCase();
+  _notifFiltered = q ? _notifData.filter(p => p.name.toLowerCase().includes(q)) : [..._notifData];
+  renderNotifications();
+}
+
+function renderNotifications() {
+  const list = document.getElementById('notifList');
+  if (!_notifFiltered.length) {
+    list.innerHTML = '<div style="padding:40px;text-align:center;color:var(--muted);">No pending notifications found.</div>';
+    return;
+  }
+  if (!window._notifProviders) window._notifProviders = [];
+  window._notifProviders = _notifFiltered.map(p => {
+    const mp = p.matchedProv;
+    return (mp && mp.match) ? {...mp.match} : null;
+  });
+
+  list.innerHTML = _notifFiltered.map((p, i) => {
+    const mp = p.matchedProv || { match: null, ambiguous: false, candidates: [] };
+    const isMatched   = !!mp.match;
+    const isAmbiguous = mp.ambiguous;
+    const provName  = isMatched ? mp.match.display : '';
+    const provPhone = isMatched ? mp.match.phone   : '';
+    const borderCol = isMatched ? 'var(--green)' : isAmbiguous ? '#f59e0b' : 'var(--border)';
+    const statusTxt = isMatched
+      ? `<span style="font-size:10px;font-weight:600;color:var(--green);">✓ Auto-matched</span>`
+      : isAmbiguous
+        ? `<span style="font-size:10px;font-weight:600;color:#b45309;">⚠ Multiple locations — please select</span>`
+        : `<span style="font-size:10px;font-weight:600;color:var(--muted);">No match — search below</span>`;
+    // Pre-populate dropdown hint for ambiguous
+    const placeholder = isAmbiguous
+      ? `${mp.candidates.length} options for "${p.provAbbr}" — type to filter`
+      : 'Search provider...';
+    return `<div style="padding:14px 16px;border-bottom:1px solid var(--border);display:flex;align-items:flex-start;gap:12px;">
+      <div style="flex:1;min-width:0;">
+        <div style="font-weight:600;font-size:13px;color:var(--text);">${p.name}</div>
+        <div style="font-size:11px;color:var(--muted);margin-top:2px;">
+          ${p.phone} &nbsp;·&nbsp; ${p.insurance} &nbsp;·&nbsp; <strong>${p.specialty||'—'}</strong>
+          &nbsp;·&nbsp; Provider code: <strong>${p.provAbbr||'—'}</strong>
+        </div>
+        <div style="margin-top:8px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+          ${statusTxt}
+          <div style="position:relative;flex:1;min-width:180px;max-width:300px;">
+            <input id="nProvInput${i}" value="${provName}" placeholder="${placeholder}"
+              oninput="searchNotifProv(${i},this.value)"
+              onfocus="showNotifCandidates(${i})"
+              style="width:100%;padding:5px 8px;border:1px solid ${borderCol};border-radius:5px;font-size:11px;font-family:inherit;outline:none;">
+            <div id="nProvDd${i}" style="display:none;position:absolute;top:100%;left:0;right:0;background:white;border:1px solid var(--blue-mid);border-radius:5px;z-index:50;max-height:140px;overflow-y:auto;box-shadow:0 4px 12px rgba(0,0,0,.1);margin-top:2px;"></div>
+          </div>
+          <span id="nProvPhone${i}" style="font-size:11px;color:var(--muted);">${provPhone}</span>
+        </div>
+      </div>
+      <button onclick="openMessage(${i})"
+        style="flex-shrink:0;padding:8px 14px;background:var(--navy);color:white;border:none;border-radius:6px;font-family:inherit;font-size:11px;font-weight:600;cursor:pointer;margin-top:2px;">
+        Generate Message
+      </button>
+    </div>`;
+  }).join('');
+}
+
+function showNotifCandidates(rowIdx) {
+  const p = _notifFiltered[rowIdx];
+  const mp = p ? (p.matchedProv || {}) : {};
+  const q = document.getElementById(`nProvInput${rowIdx}`).value;
+  if (mp.ambiguous && mp.candidates && !q.trim()) {
+    // Show all candidates for ambiguous match
+    const dd = document.getElementById(`nProvDd${rowIdx}`);
+    dd.style.display = 'block';
+    const all = window._spProviders || [];
+    dd.innerHTML = mp.candidates.map(c => {
+      const gi = all.indexOf(c);
+      return `<div onclick="selectNotifProv(${rowIdx},${gi})"
+        style="padding:6px 10px;cursor:pointer;font-size:11px;border-bottom:1px solid #f1f5f9;background:#fffbeb;"
+        onmouseover="this.style.background='var(--blue-pale)'" onmouseout="this.style.background='#fffbeb'">
+        <div style="font-weight:600;color:var(--text)">${c.display}</div>
+        <div style="font-size:10px;color:var(--muted)">${c.phone}</div>
+      </div>`;
+    }).join('');
+  } else {
+    searchNotifProv(rowIdx, q);
+  }
+}
+
+function searchNotifProv(rowIdx, q) {
+  const dd = document.getElementById(`nProvDd${rowIdx}`);
+  const all = window._spProviders || [];
+  const matches = q.trim()
+    ? all.filter(p => p.display.toLowerCase().includes(q.toLowerCase()) || p.name.toLowerCase().includes(q.toLowerCase()))
+    : all.slice(0, 10);
+  if (!matches.length) { dd.style.display='none'; return; }
+  dd.style.display = 'block';
+  dd.innerHTML = matches.slice(0,8).map(p => {
+    const gi = all.indexOf(p);
+    return `<div onclick="selectNotifProv(${rowIdx},${gi})"
+      style="padding:6px 10px;cursor:pointer;font-size:11px;border-bottom:1px solid #f1f5f9;"
+      onmouseover="this.style.background='var(--blue-pale)'" onmouseout="this.style.background=''">
+      <div style="font-weight:600;color:var(--text)">${p.display}</div>
+      <div style="font-size:10px;color:var(--muted)">${p.phone}</div>
+    </div>`;
+  }).join('');
+}
+
+function selectNotifProv(rowIdx, provIdx) {
+  const p = (window._spProviders||[])[provIdx];
+  if (!p) return;
+  window._notifProviders[rowIdx] = {...p};
+  document.getElementById(`nProvInput${rowIdx}`).value = p.display;
+  document.getElementById(`nProvInput${rowIdx}`).style.borderColor = 'var(--green)';
+  document.getElementById(`nProvPhone${rowIdx}`).textContent = p.phone;
+  document.getElementById(`nProvDd${rowIdx}`).style.display = 'none';
+}
+
+function openMessage(rowIdx) {
+  const pt = _notifFiltered[rowIdx];
+  const prov = (window._notifProviders||[])[rowIdx];
+  const parts = pt.name.split(',');
+  const lastName = (parts[0]||'').trim();
+  const firstName = (parts[1]||'').trim().split(' ')[0];
+  const femaleNames = ['MARIA','ANA','ROSA','PATRICIA','GLORIA','CARMEN','DIANA','MARTHA',
+    'JESSICA','JENNIFER','LAURA','SANDRA','LINDA','BARBARA','ELIZABETH','SUSAN','KAREN',
+    'LISA','NANCY','BETTY','HILDA','IRENE','ANGELICA','FRANCISCA','BLANCA','YOLANDA',
+    'EVANGELINA','NORMA','OLGA','GRACIELA','MARICELA','VANESSA','CHELSEA','AIDA'];
+  const isFemale = femaleNames.includes(firstName.toUpperCase());
+  const salutation = isFemale ? 'Ms.' : 'Mr.';
+  const greeting = firstName ? firstName + ' ' + lastName : lastName;
+  const specialty = pt.specialty || 'your referral';
+  const provName  = prov ? prov.display : (pt.provAbbr || 'the provider');
+  const provPhone = prov ? prov.phone : '';
+  const phoneText = provPhone
+    ? ` Please call them at ${provPhone} to schedule your appointment.`
+    : ' Please contact them to schedule your appointment.';
+  const msg = `Hi ${salutation} ${greeting}, I'm writing from Dr. White's office. I'd like to inform you that your ${specialty} authorization has been approved and your order has been sent to ${provName}.${phoneText} Thank you and have a great day!`;
+  document.getElementById('msgPatientLabel').textContent = `${pt.name}  ·  ${pt.phone}`;
+  document.getElementById('msgText').value = msg;
+  document.getElementById('msgModal').style.display = 'flex';
+  document.getElementById('copiedLabel').style.display = 'none';
+}
+
+function closeMsg() { document.getElementById('msgModal').style.display = 'none'; }
+
+function copyMsg() {
+  navigator.clipboard.writeText(document.getElementById('msgText').value).then(() => {
+    const lbl = document.getElementById('copiedLabel');
+    lbl.style.display = 'block';
+    setTimeout(() => lbl.style.display = 'none', 2000);
+  });
+}
+
+document.addEventListener('click', e => {
+  if (!e.target.id || !e.target.id.startsWith('nProvInput')) {
+    document.querySelectorAll('[id^="nProvDd"]').forEach(d => d.style.display='none');
+  }
+});
+
+
+// ════════════════════════════════
+//  SAVE PROVIDER TO SHAREPOINT
+// ════════════════════════════════
+async function saveProviderToList() {
+  const name    = document.getElementById('provName').value.trim();
+  const addr    = document.getElementById('provAddr').value.trim();
+  const phone   = document.getElementById('provPhone').value.trim();
+  const fax     = document.getElementById('provFax').value.trim();
+  const display = document.getElementById('provSearch').value.trim() || name;
+
+  if (!name || !phone) {
+    showSaveStatus('Please fill in at least Provider Name and Phone first.', 'var(--red)');
+    return;
+  }
+
+  // Check if already exists
+  if (window._spProviders && window._spProviders.some(p =>
+    p.name.toLowerCase() === name.toLowerCase() ||
+    p.display.toLowerCase() === display.toLowerCase()
+  )) {
+    showSaveStatus('This provider is already in the list.', 'var(--yellow)');
+    return;
+  }
+
+  const btn = document.getElementById('saveProvBtn');
+  btn.textContent = 'Saving...';
+  btn.disabled = true;
+
+  try {
+    const token = await getToken();
+
+    // Read current providers sheet to find next empty row
+    const readUrl = `https://graph.microsoft.com/v1.0/drives/${DRIVE_ID}/items/${PROVIDERS_FILE_ID}/workbook/worksheets/Providers/usedRange`;
+    const readResp = await fetch(readUrl, { headers: { Authorization: `Bearer ${token}` } });
+    const readData = await readResp.json();
+    const nextRow = (readData.values ? readData.values.length : 1) + 1;
+
+    // Write new row using the range address
+    const rangeAddr = `A${nextRow}:E${nextRow}`;
+    const writeUrl = `https://graph.microsoft.com/v1.0/drives/${DRIVE_ID}/items/${PROVIDERS_FILE_ID}/workbook/worksheets/Providers/range(address='${rangeAddr}')`;
+    const writeResp = await fetch(writeUrl, {
+      method: 'PATCH',
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        values: [[display, name, addr, phone, fax]]
+      })
+    });
+
+    if (!writeResp.ok) {
+      const err = await writeResp.json();
+      throw new Error(err.error?.message || writeResp.status);
+    }
+
+    // Add to local list immediately so it's available without refresh
+    if (window._spProviders) {
+      window._spProviders.push({ display, name, addr, phone, fax });
+    }
+
+    showSaveStatus(`✓ "${display}" saved to providers list!`, 'var(--green)');
+    btn.textContent = '✓ Saved';
+    setTimeout(() => {
+      btn.textContent = '+ Save this provider to the list';
+      btn.disabled = false;
+    }, 3000);
+
+  } catch(e) {
+    showSaveStatus('Error saving: ' + e.message, 'var(--red)');
+    btn.textContent = '+ Save this provider to the list';
+    btn.disabled = false;
+  }
+}
+
+function showSaveStatus(msg, color) {
+  const el = document.getElementById('saveProvStatus');
+  el.textContent = msg;
+  el.style.color = color;
+  el.style.display = 'block';
+  setTimeout(() => el.style.display = 'none', 5000);
+}
+
 </script>
 </body>
 </html>
