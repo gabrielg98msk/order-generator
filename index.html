@@ -335,11 +335,62 @@ header p{font-size:11px;color:#94a3b8;margin-top:1px;}
           <div style="color:white;font-weight:600;font-size:14px;">Patient Notifications</div>
           <div style="color:#94a3b8;font-size:11px;margin-top:2px;">Patients pending notification — matched to provider contact info</div>
         </div>
-        <button onclick="loadNotifications()" id="refreshNotifBtn"
-          style="padding:6px 14px;background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.2);border-radius:5px;color:white;font-size:11px;font-family:inherit;cursor:pointer;">
-          Refresh
-        </button>
+        <div style="display:flex;gap:8px;">
+          <button onclick="toggleAddProvider()"
+            style="padding:6px 14px;background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.2);border-radius:5px;color:white;font-size:11px;font-family:inherit;cursor:pointer;">
+            + Add Provider
+          </button>
+          <button onclick="loadNotifications()" id="refreshNotifBtn"
+            style="padding:6px 14px;background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.2);border-radius:5px;color:white;font-size:11px;font-family:inherit;cursor:pointer;">
+            Refresh
+          </button>
+        </div>
       </div>
+      <!-- Add Provider Form (collapsible) -->
+      <div id="addProvForm" style="display:none;padding:14px 16px;border-bottom:2px solid var(--blue-mid);background:var(--blue-pale);">
+        <div style="font-size:12px;font-weight:600;color:var(--navy);margin-bottom:10px;">Add New Provider to List</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+          <div>
+            <label style="font-size:10px;font-weight:600;color:var(--muted);display:block;margin-bottom:3px;">Display Name (dropdown label)</label>
+            <input id="npDisplayName" placeholder="e.g. IHS – Chula Vista"
+              style="width:100%;padding:6px 8px;border:1px solid var(--border);border-radius:5px;font-size:12px;font-family:inherit;outline:none;">
+          </div>
+          <div>
+            <label style="font-size:10px;font-weight:600;color:var(--muted);display:block;margin-bottom:3px;">Provider Name (To: field)</label>
+            <input id="npProvName" placeholder="e.g. IHS RADIOLOGY CENTER"
+              style="width:100%;padding:6px 8px;border:1px solid var(--border);border-radius:5px;font-size:12px;font-family:inherit;outline:none;">
+          </div>
+          <div>
+            <label style="font-size:10px;font-weight:600;color:var(--muted);display:block;margin-bottom:3px;">Address (optional)</label>
+            <input id="npAddress" placeholder="Full address"
+              style="width:100%;padding:6px 8px;border:1px solid var(--border);border-radius:5px;font-size:12px;font-family:inherit;outline:none;">
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;">
+            <div>
+              <label style="font-size:10px;font-weight:600;color:var(--muted);display:block;margin-bottom:3px;">Phone</label>
+              <input id="npPhone" placeholder="(000) 000-0000"
+                style="width:100%;padding:6px 8px;border:1px solid var(--border);border-radius:5px;font-size:12px;font-family:inherit;outline:none;">
+            </div>
+            <div>
+              <label style="font-size:10px;font-weight:600;color:var(--muted);display:block;margin-bottom:3px;">Fax</label>
+              <input id="npFax" placeholder="(000) 000-0000"
+                style="width:100%;padding:6px 8px;border:1px solid var(--border);border-radius:5px;font-size:12px;font-family:inherit;outline:none;">
+            </div>
+          </div>
+        </div>
+        <div style="margin-top:10px;display:flex;align-items:center;gap:10px;">
+          <button onclick="saveNewProviderFromNotif()"
+            style="padding:7px 18px;background:var(--navy);color:white;border:none;border-radius:5px;font-family:inherit;font-size:12px;font-weight:600;cursor:pointer;">
+            Save Provider
+          </button>
+          <button onclick="toggleAddProvider()"
+            style="padding:7px 14px;background:transparent;border:1px solid var(--border);border-radius:5px;font-family:inherit;font-size:12px;cursor:pointer;color:var(--muted);">
+            Cancel
+          </button>
+          <span id="npSaveStatus" style="font-size:11px;"></span>
+        </div>
+      </div>
+
       <div style="padding:12px 16px;border-bottom:1px solid var(--border);display:flex;gap:10px;align-items:center;">
         <input id="notifSearch" placeholder="Filter by patient name..." oninput="filterNotifications()"
           style="flex:1;padding:6px 10px;border:1px solid var(--border);border-radius:5px;font-size:12px;font-family:inherit;outline:none;">
@@ -1615,6 +1666,28 @@ function showNotifCandidates(gk, key, ri) {
   }
 }
 
+function showAllProviders(gk, key, ri) {
+  // Show full provider list when input is focused and empty (no match)
+  const dd = document.getElementById(`ndd_${gk}`);
+  const q = document.getElementById(`npi_${gk}`).value;
+  if (!q.trim()) {
+    const all = window._spProviders || [];
+    dd.style.display = 'block';
+    dd.innerHTML = `<div style="padding:6px 10px;font-size:10px;color:var(--muted);border-bottom:1px solid #f1f5f9;font-weight:600;">All providers (${all.length}) — type to filter</div>` +
+      all.map(p => {
+        const gi = all.indexOf(p);
+        return `<div onclick="selectNotifProv('${gk}','${key}',${ri},${gi})"
+          style="padding:5px 10px;cursor:pointer;font-size:11px;border-bottom:1px solid #f1f5f9;"
+          onmouseover="this.style.background='var(--blue-pale)'" onmouseout="this.style.background=''">
+          <div style="font-weight:600;">${p.display}</div>
+          <div style="font-size:10px;color:var(--muted);">${p.phone}</div>
+        </div>`;
+      }).join('');
+  } else {
+    searchNotifProv(gk, q, key, ri);
+  }
+}
+
 function searchNotifProv(gk, q, key, ri) {
   const dd = document.getElementById(`ndd_${gk}`);
   const all = window._spProviders || [];
@@ -1893,6 +1966,81 @@ function showSaveStatus(msg, color) {
   el.style.color = color;
   el.style.display = 'block';
   setTimeout(() => el.style.display = 'none', 5000);
+}
+
+
+function toggleAddProvider() {
+  const form = document.getElementById('addProvForm');
+  form.style.display = form.style.display === 'none' ? 'block' : 'none';
+  if (form.style.display === 'block') {
+    document.getElementById('npDisplayName').focus();
+    document.getElementById('npSaveStatus').textContent = '';
+  }
+}
+
+async function saveNewProviderFromNotif() {
+  const display = document.getElementById('npDisplayName').value.trim();
+  const name    = document.getElementById('npProvName').value.trim();
+  const addr    = document.getElementById('npAddress').value.trim();
+  const phone   = document.getElementById('npPhone').value.trim();
+  const fax     = document.getElementById('npFax').value.trim();
+  const status  = document.getElementById('npSaveStatus');
+
+  if (!display || !name || !phone) {
+    status.textContent = 'Display Name, Provider Name and Phone are required.';
+    status.style.color = 'var(--red)';
+    return;
+  }
+
+  // Check duplicate
+  if (window._spProviders && window._spProviders.some(p =>
+    p.display.toLowerCase() === display.toLowerCase() ||
+    p.name.toLowerCase() === name.toLowerCase()
+  )) {
+    status.textContent = 'This provider is already in the list.';
+    status.style.color = '#d97706';
+    return;
+  }
+
+  status.textContent = 'Saving...';
+  status.style.color = 'var(--muted)';
+
+  try {
+    const token = await getToken();
+    const readResp = await fetch(
+      `https://graph.microsoft.com/v1.0/drives/${DRIVE_ID}/items/${PROVIDERS_FILE_ID}/workbook/worksheets/Providers/usedRange`,
+      { headers: { Authorization: `Bearer ${token}` } }
+    );
+    const readData = await readResp.json();
+    const nextRow = readData.values ? readData.values.length + 1 : 2;
+    const rangeAddr = `A${nextRow}:E${nextRow}`;
+    const writeResp = await fetch(
+      `https://graph.microsoft.com/v1.0/drives/${DRIVE_ID}/items/${PROVIDERS_FILE_ID}/workbook/worksheets/Providers/range(address='${rangeAddr}')`,
+      {
+        method: 'PATCH',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ values: [[display, name, addr, phone, fax]] })
+      }
+    );
+    if (!writeResp.ok) throw new Error((await writeResp.json()).error?.message || writeResp.status);
+
+    // Add to local list immediately
+    if (window._spProviders) window._spProviders.push({ display, name, addr, phone, fax });
+
+    status.textContent = `✓ "${display}" saved!`;
+    status.style.color = 'var(--green)';
+
+    // Clear form
+    ['npDisplayName','npProvName','npAddress','npPhone','npFax'].forEach(id =>
+      document.getElementById(id).value = '');
+
+    // Hide form after 2s
+    setTimeout(() => toggleAddProvider(), 2000);
+
+  } catch(e) {
+    status.textContent = 'Error: ' + e.message;
+    status.style.color = 'var(--red)';
+  }
 }
 
 </script>
