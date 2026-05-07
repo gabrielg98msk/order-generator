@@ -1313,29 +1313,6 @@ async function generateOrder() {
 }
 
 // ════════════════════════════════
-//  NOTIFICATIONS
-// ════════════════════════════════
-let _notifData = [];
-let _notifFiltered = [];
-
-function showTab(tab) {
-  const isOrders = tab === 'orders';
-  const wrap = document.querySelector('.wrap');
-  if (wrap) wrap.style.display = isOrders ? 'grid' : 'none';
-  const toolbars = document.querySelectorAll('.wrap ~ div');
-  toolbars.forEach(t => { if (t.id !== 'notifPanel') t.style.display = isOrders ? 'flex' : 'none'; });
-  document.getElementById('notifPanel').style.display = isOrders ? 'none' : 'block';
-  const tO = document.getElementById('tabOrders');
-  const tN = document.getElementById('tabNotif');
-  tO.style.background = isOrders ? 'white' : 'transparent';
-  tO.style.color = isOrders ? 'var(--navy)' : 'rgba(255,255,255,.7)';
-  tN.style.background = isOrders ? 'transparent' : 'white';
-  tN.style.color = isOrders ? 'rgba(255,255,255,.7)' : 'var(--navy)';
-  if (!isOrders && _notifData.length === 0) loadNotifications();
-}
-
-
-// ════════════════════════════════
 //  NOTIFICATIONS v2
 // ════════════════════════════════
 let _notifData = [];
