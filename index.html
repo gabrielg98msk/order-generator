@@ -1717,6 +1717,18 @@ function selectNotifProv(gk, key, ri, provIdx) {
   document.getElementById(`ndd_${gk}`).style.display = 'none';
 }
 
+function formatPhone(raw) {
+  // Standardize to (XXX) XXX-XXXX
+  const digits = (raw || '').replace(/\D/g, '');
+  if (digits.length === 10) {
+    return `(${digits.slice(0,3)}) ${digits.slice(3,6)}-${digits.slice(6)}`;
+  }
+  if (digits.length === 11 && digits[0] === '1') {
+    return `(${digits.slice(1,4)}) ${digits.slice(4,7)}-${digits.slice(7)}`;
+  }
+  return raw; // return as-is if can't parse
+}
+
 function generateGroupMessage(key) {
   const rows = _notifData[key] || [];
   const selected = window._selectedOrders[key] || new Set();
@@ -1724,47 +1736,72 @@ function generateGroupMessage(key) {
     alert('Please select at least one order for this patient.');
     return;
   }
-  const selectedRows = [...selected].map(i => rows[i]);
+
   const pt = rows[0];
   const nameParts = pt.name.split(',');
-  const lastName = (nameParts[0]||'').trim();
+  const lastName  = (nameParts[0]||'').trim();
   const firstName = (nameParts[1]||'').trim().split(' ')[0];
   const femaleNames = ['MARIA','ANA','ROSA','PATRICIA','GLORIA','CARMEN','DIANA','MARTHA',
     'JESSICA','JENNIFER','LAURA','SANDRA','LINDA','BARBARA','ELIZABETH','SUSAN','KAREN',
     'LISA','NANCY','BETTY','HILDA','IRENE','ANGELICA','FRANCISCA','BLANCA','YOLANDA',
     'EVANGELINA','NORMA','OLGA','GRACIELA','MARICELA','VANESSA','CHELSEA','AIDA',
-    'FELICIANA','CAROL','SHEILA','ROSA','CARRIE','SHELLY'];
-  const isFemale = femaleNames.includes(firstName.toUpperCase());
+    'FELICIANA','CAROL','SHEILA','CARRIE','SHELLY'];
+  const isFemale  = femaleNames.includes(firstName.toUpperCase());
   const salutation = isFemale ? 'Ms.' : 'Mr.';
-  const greeting = firstName ? `${firstName} ${lastName}` : lastName;
+  const greeting   = firstName ? `${firstName} ${lastName}` : lastName;
 
-  // Build order details
-  let orderLines = [];
-  selectedRows.forEach((r, idx) => {
-    const gk = `${key}_${[...selected][idx]}`;
-    const prov = window._patientProviders[gk];
-    const specialty = r.specialty || 'your referral';
-    const provName = prov ? prov.display : (r.provAbbr || 'the provider');
-    const provPhone = prov ? prov.phone : '';
-    if (provPhone) {
-      orderLines.push(`your ${specialty} order has been sent to ${provName} (${provPhone})`);
-    } else {
-      orderLines.push(`your ${specialty} order has been sent to ${provName}`);
-    }
+  // Build selected rows
+  const selectedRows = [...selected].map(i => ({
+    row: rows[i],
+    prov: window._patientProviders[`${key}_${i}`] || null
+  }));
+
+  // ── Group by provider ──
+  const provGroups = {};
+  selectedRows.forEach(({ row, prov }) => {
+    const provKey = prov ? prov.display : (row.provAbbr || 'unknown');
+    if (!provGroups[provKey]) provGroups[provKey] = { prov, specialties: [] };
+    provGroups[provKey].specialties.push(row.specialty || 'order');
   });
 
+  // ── Build order lines (one per provider) ──
+  const orderLines = Object.values(provGroups).map(({ prov, specialties }) => {
+    const provName  = prov ? prov.display : 'the provider';
+    const provPhone = prov ? formatPhone(prov.phone) : '';
+    // Format specialties list
+    let specText = '';
+    if (specialties.length === 1) {
+      specText = `your ${specialties[0]} order`;
+    } else if (specialties.length === 2) {
+      specText = `your ${specialties[0]} and ${specialties[1]} orders`;
+    } else {
+      const last = specialties[specialties.length - 1];
+      specText = `your ${specialties.slice(0,-1).join(', ')}, and ${last} orders`;
+    }
+    // Provider name + phone tightly joined with "at"
+    const provPart = provPhone ? `${provName} at ${provPhone}` : provName;
+    return `${specText} have been sent to ${provPart}`;
+  });
+
+  // ── Build final message ──
+  // Each order line is a complete sentence. Closing instruction at the end.
   let orderText = '';
+  let closing = '';
   if (orderLines.length === 1) {
-    orderText = `${orderLines[0]}. Please call them to schedule your appointment.`;
+    orderText = `${orderLines[0]}.`;
+    closing = ' Please call them directly to schedule your appointment.';
   } else {
-    const last = orderLines.pop();
-    orderText = `the following orders have been approved and sent: ${orderLines.join('; ')}, and ${last}. Please call each provider to schedule your appointments.`;
+    orderText = orderLines.map(l => `${l.charAt(0).toUpperCase() + l.slice(1)}.`).join(' ');
+    closing = ' Please call each provider directly to schedule your appointments.';
   }
 
-  const msg = `Hi ${salutation} ${greeting}, I'm writing from Dr. White's office. I'd like to inform you that ${orderText} Thank you and have a great day!`;
+  const msg = `Hi ${salutation} ${greeting}, I'm writing from Dr. White's office. I'd like to inform you that ${orderLines.length === 1 ? orderText : ''}${orderLines.length > 1 ? 'the following orders have been approved and sent. ' + orderText : ''}${closing} Thank you and have a great day!`;
 
-  // Store context for mark-as-notified
-  window._pendingNotif = { key, selectedRows: [...selected].map(i => rows[i]), selectedIndices: [...selected] };
+  window._pendingNotif = {
+    key,
+    selectedRows: [...selected].map(i => rows[i]),
+    selectedIndices: [...selected]
+  };
 
   document.getElementById('msgPatientLabel').textContent = `${pt.name}  ·  ${pt.phone}  ·  ${selected.size} order(s)`;
   document.getElementById('msgText').value = msg;
