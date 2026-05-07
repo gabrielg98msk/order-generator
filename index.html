@@ -360,11 +360,18 @@ header p{font-size:11px;color:#94a3b8;margin-top:1px;}
             Close
           </button>
           <button onclick="copyMsg()"
-            style="padding:8px 20px;background:var(--navy);color:white;border:none;border-radius:6px;font-family:inherit;font-size:12px;font-weight:600;cursor:pointer;">
+            style="padding:8px 20px;background:var(--blue);color:white;border:none;border-radius:6px;font-family:inherit;font-size:12px;font-weight:600;cursor:pointer;">
             Copy Message
           </button>
+          <button id="markNotifiedBtn" onclick="markAsNotified()"
+            style="padding:8px 16px;background:var(--navy);color:white;border:none;border-radius:6px;font-family:inherit;font-size:12px;font-weight:600;cursor:pointer;display:none;align-items:center;gap:6px;">
+            ✓ Mark as Notified
+          </button>
         </div>
-        <div id="copiedLabel" style="text-align:center;font-size:11px;color:var(--green);margin-top:8px;display:none;">Copied to clipboard!</div>
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-top:8px;">
+          <div id="copiedLabel" style="font-size:11px;color:var(--green);display:none;">Copied!</div>
+          <div id="markNotifiedStatus" style="font-size:11px;"></div>
+        </div>
       </div>
     </div>
   </div>
@@ -1327,55 +1334,492 @@ function showTab(tab) {
   if (!isOrders && _notifData.length === 0) loadNotifications();
 }
 
+
+// ════════════════════════════════
+//  NOTIFICATIONS v2
+// ════════════════════════════════
+let _notifData = [];
+let _notifFiltered = [];
+let _userInitials = 'XX';
+
 async function loadNotifications() {
   const btn = document.getElementById('refreshNotifBtn');
   const list = document.getElementById('notifList');
   btn.textContent = 'Loading...';
-  list.innerHTML = '<div style="padding:40px;text-align:center;color:var(--muted);">Loading...</div>';
+  list.innerHTML = '<div style="padding:40px;text-align:center;color:var(--muted);">Loading both sheets...</div>';
+
   try {
     const token = await getToken();
-    const resp = await fetch(
-      `https://graph.microsoft.com/v1.0/drives/${DRIVE_ID}/items/${FILE_ID}/workbook/worksheets/${encodeURIComponent(SHEET_NAME)}/usedRange`,
-      { headers: { Authorization: `Bearer ${token}` } }
-    );
-    const data = await resp.json();
-    if (!data.values) throw new Error('No data');
-    const rows = data.values;
-    const H = rows[0].map(h => (h||'').toLowerCase());
-    const idx = {
-      name:     H.findIndex(h => h.includes('name') && !h.includes('provider') && !h.includes('rendering')),
-      phone:    H.findIndex(h => h.includes('phone')),
-      ins:      H.findIndex(h => h.includes('insur')),
-      specialty:H.findIndex(h => h.includes('specialty') || h.includes('dme')),
-      provider: H.findIndex(h => h.includes('rendering') || (h.includes('provider') && !h.includes('name'))),
-      notes:    H.findIndex(h => h.includes('notes')),
+
+    // Get user initials
+    try {
+      const meResp = await fetch('https://graph.microsoft.com/v1.0/me', { headers: { Authorization: `Bearer ${token}` }});
+      const me = await meResp.json();
+      const parts = (me.displayName || '').split(' ');
+      _userInitials = parts.map(p => p[0]).filter(Boolean).slice(0,2).join('').toUpperCase() || 'XX';
+    } catch(e) {}
+
+    // Load both sheets in parallel
+    const [refResp, imgResp] = await Promise.all([
+      fetch(`https://graph.microsoft.com/v1.0/drives/${DRIVE_ID}/items/${FILE_ID}/workbook/worksheets/${encodeURIComponent(SHEET_NAME)}/usedRange`, { headers: { Authorization: `Bearer ${token}` }}),
+      fetch(`https://graph.microsoft.com/v1.0/drives/${DRIVE_ID}/items/${FILE_ID}/workbook/worksheets/${encodeURIComponent(SHEET_NAME_IMAGING)}/usedRange`, { headers: { Authorization: `Bearer ${token}` }})
+    ]);
+
+    const refData = refResp.ok ? await refResp.json() : null;
+    const imgData = imgResp.ok ? await imgResp.json() : null;
+
+    const parseSheet = (data, source) => {
+      if (!data || !data.values || data.values.length < 2) return [];
+      const rows = data.values;
+      const H = rows[0].map(h => (h||'').toLowerCase());
+      const idx = {
+        name:     H.findIndex(h => h.includes('name') && !h.includes('provider') && !h.includes('rendering')),
+        phone:    H.findIndex(h => h.includes('phone')),
+        ins:      H.findIndex(h => h.includes('insur')),
+        specialty:H.findIndex(h => h.includes('specialty') || h.includes('dme') || h.includes('imaging')),
+        provider: H.findIndex(h => h.includes('rendering') || (h.includes('provider') && !h.includes('name'))),
+        notes:    H.findIndex(h => h.includes('notes')),
+        textmsg:  H.findIndex(h => h.includes('text')),
+        status:   H.findIndex(h => h.includes('status')),
+      };
+      return rows.slice(1).map((r, i) => ({
+        rowIndex: i + 2, // 1-based, +1 for header
+        source,
+        name:      (r[idx.name]    ||'').toString().trim(),
+        phone:     (r[idx.phone]   ||'').toString().trim(),
+        insurance: (r[idx.ins]     ||'').toString().trim(),
+        specialty: (r[idx.specialty]||'').toString().trim(),
+        provAbbr:  (r[idx.provider]||'').toString().trim(),
+        notes:     (r[idx.notes]   ||'').toString().trim(),
+        status:    (r[idx.status]  ||'').toString().trim(),
+        textMsg:   idx.textmsg >= 0 ? (r[idx.textmsg]||'').toString().trim() : '',
+        textMsgColIdx: idx.textmsg >= 0 ? idx.textmsg : H.length, // new col if not exists
+        totalCols: H.length,
+        matchedProv: null, // filled below
+      })).filter(r =>
+        r.name &&
+        r.notes.toUpperCase().includes('INFORM') &&
+        !r.textMsg // not already notified
+      );
     };
-    _notifData = rows.slice(1)
-      .filter(r => {
-        const notes = (r[idx.notes]||'').toString().toUpperCase();
-        const name  = (r[idx.name]||'').toString().trim();
-        return name && notes.includes('INFORM') && !notes.includes('INFORMED');
-      })
-      .map(r => {
-        const provAbbr = (r[idx.provider]||'').toString().trim();
-        return {
-          name:      (r[idx.name]||'').toString().trim(),
-          phone:     (r[idx.phone]||'').toString().trim(),
-          insurance: (r[idx.ins]||'').toString().trim(),
-          specialty: (r[idx.specialty]||'').toString().trim(),
-          provAbbr,
-          matchedProv: matchNotifProvider(provAbbr),
-          notes:     (r[idx.notes]||'').toString().trim(),
-        };
-      });
-    _notifFiltered = [..._notifData];
-    document.getElementById('notifCount').textContent = `${_notifData.length} pending`;
+
+    const refRows = parseSheet(refData, 'Referrals');
+    const imgRows = parseSheet(imgData, 'Imaging');
+    const all = [...refRows, ...imgRows];
+
+    // Auto-match providers
+    all.forEach(r => { r.matchedProv = matchNotifProvider(r.provAbbr); });
+
+    // Group by patient name
+    const grouped = {};
+    all.forEach(r => {
+      const key = r.name.toUpperCase().trim();
+      if (!grouped[key]) grouped[key] = [];
+      grouped[key].push(r);
+    });
+
+    _notifData = grouped;
+    _notifFiltered = {...grouped};
+
+    const totalPts = Object.keys(grouped).length;
+    const totalOrders = all.length;
+    document.getElementById('notifCount').textContent = `${totalPts} patients · ${totalOrders} orders pending`;
     renderNotifications();
   } catch(e) {
     list.innerHTML = `<div style="padding:30px;text-align:center;color:var(--red);">Error: ${e.message}</div>`;
   }
+  // Ensure "Text Message" column header exists on both sheets
+  try {
+    const token2 = await getToken();
+    for (const sheetName of [SHEET_NAME, SHEET_NAME_IMAGING]) {
+      const resp = await fetch(
+        `https://graph.microsoft.com/v1.0/drives/${DRIVE_ID}/items/${FILE_ID}/workbook/worksheets/${encodeURIComponent(sheetName)}/usedRange`,
+        { headers: { Authorization: `Bearer ${token2}` } }
+      );
+      const data = await resp.json();
+      if (!data.values || !data.values[0]) continue;
+      const headers = data.values[0].map(h => (h||'').toString().toLowerCase());
+      const hasCol = headers.some(h => h.includes('text'));
+      if (!hasCol) {
+        const newColIdx = headers.length;
+        const colLetter = colIndexToLetter(newColIdx);
+        await fetch(
+          `https://graph.microsoft.com/v1.0/drives/${DRIVE_ID}/items/${FILE_ID}/workbook/worksheets/${encodeURIComponent(sheetName)}/range(address='${colLetter}1')`,
+          {
+            method: 'PATCH',
+            headers: { Authorization: `Bearer ${token2}`, 'Content-Type': 'application/json' },
+            body: JSON.stringify({ values: [['Text Message']] })
+          }
+        );
+      }
+    }
+  } catch(e) { console.warn('Could not create Text Message column:', e.message); }
+
   btn.textContent = 'Refresh';
 }
+
+function matchNotifProvider(abbr) {
+  if (!abbr || !window._spProviders) return null;
+  const a = abbr.toUpperCase().trim();
+  const ABBR_MAP = {
+    'SS':'SPINE AND SPORT','GG':'GRIMALDI','HANGER':'HANGER','NEXUS':'NEXUS',
+    'NAVARRO':'NAVARRO','SYNOVATION':'SYNOV','IHS':'IHS','MOLES':'MOLES',
+    'KOTHA':'KOTHA','CHITKARA':'CHITKARA','MALIK':'MALIK','CASTILLEJOS':'CASTILLEJOS',
+    'SANDLER':'SANDLER','STEINER':'STEINER','NATARAJAN':'NATARAJAN','MOHAMMAD':'MOHAMMAD',
+    'GRIMALDI':'GRIMALDI','COHEN':'COHEN','JACOBS':'JACOBS','AMMIRATI':'AMMIRATI',
+    'ABDULHADI':'ABDULHADI','VERDOLIN':'VERDOLIN','DAIRO':'DAIRO','EGGLETON':'EGGLETON',
+    'SOUTHBAY':'SOUTHBAY','ORTHOFIX':'ORTHOFIX','GAO':'GAO','MUSICANT':'MUSICANT',
+    'ARGOUD':'ARGOUD','DELUXE':'DELUXE','BAZILE':'BAZILE','FIRST':'FIRST',
+    'MABAQUIAO':'MABAQUIAO','SBNS':'SBNS','WYNN':'WYNN',
+  };
+  const keyword = ABBR_MAP[a] || a;
+  const candidates = window._spProviders.filter(p =>
+    p.display.toUpperCase().includes(keyword) || p.name.toUpperCase().includes(keyword)
+  );
+  if (candidates.length === 0) return { match: null, ambiguous: false, candidates: [] };
+  if (candidates.length === 1) return { match: candidates[0], ambiguous: false, candidates };
+  return { match: null, ambiguous: true, candidates };
+}
+
+function filterNotifications() {
+  const q = document.getElementById('notifSearch').value.toLowerCase();
+  if (!q) { _notifFiltered = {..._notifData}; }
+  else {
+    _notifFiltered = {};
+    Object.entries(_notifData).forEach(([key, rows]) => {
+      if (key.toLowerCase().includes(q)) _notifFiltered[key] = rows;
+    });
+  }
+  renderNotifications();
+}
+
+// Track selected orders per patient
+window._selectedOrders = {}; // key -> Set of row indices
+window._patientProviders = {}; // key_rowIdx -> provider obj
+
+function renderNotifications() {
+  const list = document.getElementById('notifList');
+  const groups = Object.entries(_notifFiltered);
+  if (!groups.length) {
+    list.innerHTML = '<div style="padding:40px;text-align:center;color:var(--muted);">No pending notifications found.</div>';
+    return;
+  }
+
+  list.innerHTML = groups.map(([key, rows]) => {
+    const pt = rows[0];
+    const nameParts = pt.name.split(',');
+    const lastName = (nameParts[0]||'').trim();
+    const firstName = (nameParts[1]||'').trim().split(' ')[0];
+
+    const ordersHtml = rows.map((r, ri) => {
+      const globalKey = `${key}_${ri}`;
+      const mp = r.matchedProv || { match: null, ambiguous: false, candidates: [] };
+      const isMatched = !!mp.match;
+      const isAmbiguous = mp.ambiguous;
+      const provName = isMatched ? mp.match.display : '';
+      const provPhone = isMatched ? mp.match.phone : '';
+      const borderCol = isMatched ? '#16a34a' : isAmbiguous ? '#d97706' : '#e2e8f0';
+      const statusBadge = isMatched
+        ? `<span style="font-size:9px;background:#dcfce7;color:#15803d;padding:1px 5px;border-radius:3px;font-weight:600;">✓ matched</span>`
+        : isAmbiguous
+          ? `<span style="font-size:9px;background:#fef9c3;color:#92400e;padding:1px 5px;border-radius:3px;font-weight:600;">⚠ select location</span>`
+          : `<span style="font-size:9px;background:#f1f5f9;color:#64748b;padding:1px 5px;border-radius:3px;font-weight:600;">search</span>`;
+      const srcBadge = r.source === 'Imaging'
+        ? `<span style="font-size:9px;background:#ede9fe;color:#6d28d9;padding:1px 5px;border-radius:3px;font-weight:600;">Imaging</span>`
+        : `<span style="font-size:9px;background:#dbeafe;color:#1e40af;padding:1px 5px;border-radius:3px;font-weight:600;">Referral</span>`;
+
+      return `<div style="padding:8px 12px;background:#f8fafc;border-radius:6px;margin-bottom:6px;border:1px solid #e2e8f0;">
+        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+          <input type="checkbox" id="chk_${globalKey}" onchange="toggleOrder('${key}',${ri})"
+            style="width:15px;height:15px;cursor:pointer;accent-color:var(--navy);flex-shrink:0;">
+          ${srcBadge}
+          <strong style="font-size:12px;">${r.specialty||'—'}</strong>
+          <span style="font-size:11px;color:var(--muted);">Provider code: ${r.provAbbr||'—'}</span>
+          ${statusBadge}
+        </div>
+        <div style="margin-top:6px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+          <div style="position:relative;flex:1;min-width:160px;max-width:280px;">
+            <input id="npi_${globalKey}" value="${provName}" placeholder="${isAmbiguous ? `${mp.candidates.length} options — select` : 'Search provider...'}"
+              oninput="searchNotifProv('${globalKey}',this.value,'${key}',${ri})"
+              onfocus="showNotifCandidates('${globalKey}','${key}',${ri})"
+              style="width:100%;padding:4px 8px;border:1px solid ${borderCol};border-radius:5px;font-size:11px;font-family:inherit;outline:none;">
+            <div id="ndd_${globalKey}" style="display:none;position:absolute;top:100%;left:0;right:0;background:white;border:1px solid var(--blue-mid);border-radius:5px;z-index:50;max-height:130px;overflow-y:auto;box-shadow:0 4px 12px rgba(0,0,0,.1);margin-top:2px;"></div>
+          </div>
+          <span id="nph_${globalKey}" style="font-size:11px;color:var(--muted);">${provPhone}</span>
+        </div>
+      </div>`;
+    }).join('');
+
+    return `<div style="padding:14px 16px;border-bottom:1px solid var(--border);">
+      <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px;">
+        <div style="flex:1;">
+          <div style="font-weight:600;font-size:13px;color:var(--text);">${pt.name}</div>
+          <div style="font-size:11px;color:var(--muted);margin-top:1px;">${pt.phone} &nbsp;·&nbsp; ${pt.insurance}</div>
+          <div style="margin-top:10px;">${ordersHtml}</div>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:6px;flex-shrink:0;">
+          <button onclick="selectAllOrders('${key}',${rows.length})"
+            style="padding:5px 10px;border:1px solid var(--border);border-radius:5px;background:white;font-family:inherit;font-size:10px;cursor:pointer;color:var(--muted);">
+            Select all
+          </button>
+          <button onclick="generateGroupMessage('${key}')"
+            style="padding:7px 12px;background:var(--navy);color:white;border:none;border-radius:5px;font-family:inherit;font-size:11px;font-weight:600;cursor:pointer;">
+            Generate Message
+          </button>
+        </div>
+      </div>
+    </div>`;
+  }).join('');
+
+  // Init selections
+  groups.forEach(([key]) => {
+    if (!window._selectedOrders[key]) window._selectedOrders[key] = new Set();
+  });
+  // Init providers from matched
+  groups.forEach(([key, rows]) => {
+    rows.forEach((r, ri) => {
+      const gk = `${key}_${ri}`;
+      const mp = r.matchedProv;
+      if (mp && mp.match) window._patientProviders[gk] = {...mp.match};
+    });
+  });
+}
+
+function toggleOrder(key, ri) {
+  if (!window._selectedOrders[key]) window._selectedOrders[key] = new Set();
+  const chk = document.getElementById(`chk_${key}_${ri}`);
+  if (chk.checked) window._selectedOrders[key].add(ri);
+  else window._selectedOrders[key].delete(ri);
+}
+
+function selectAllOrders(key, count) {
+  if (!window._selectedOrders[key]) window._selectedOrders[key] = new Set();
+  for (let i = 0; i < count; i++) {
+    window._selectedOrders[key].add(i);
+    const chk = document.getElementById(`chk_${key}_${i}`);
+    if (chk) chk.checked = true;
+  }
+}
+
+function showNotifCandidates(gk, key, ri) {
+  const rows = _notifData[key] || [];
+  const r = rows[ri];
+  if (!r) return;
+  const mp = r.matchedProv || {};
+  const q = document.getElementById(`npi_${gk}`).value;
+  if (mp.ambiguous && mp.candidates && !q.trim()) {
+    const dd = document.getElementById(`ndd_${gk}`);
+    dd.style.display = 'block';
+    const all = window._spProviders || [];
+    dd.innerHTML = mp.candidates.map(c => {
+      const gi = all.indexOf(c);
+      return `<div onclick="selectNotifProv('${gk}','${key}',${ri},${gi})"
+        style="padding:6px 10px;cursor:pointer;font-size:11px;border-bottom:1px solid #f1f5f9;background:#fffbeb;"
+        onmouseover="this.style.background='var(--blue-pale)'" onmouseout="this.style.background='#fffbeb'">
+        <div style="font-weight:600;">${c.display}</div>
+        <div style="font-size:10px;color:var(--muted);">${c.phone}</div>
+      </div>`;
+    }).join('');
+  } else {
+    searchNotifProv(gk, q, key, ri);
+  }
+}
+
+function searchNotifProv(gk, q, key, ri) {
+  const dd = document.getElementById(`ndd_${gk}`);
+  const all = window._spProviders || [];
+  const matches = q.trim()
+    ? all.filter(p => p.display.toLowerCase().includes(q.toLowerCase()) || p.name.toLowerCase().includes(q.toLowerCase()))
+    : all.slice(0, 8);
+  if (!matches.length) { dd.style.display='none'; return; }
+  dd.style.display = 'block';
+  dd.innerHTML = matches.slice(0,8).map(p => {
+    const gi = all.indexOf(p);
+    return `<div onclick="selectNotifProv('${gk}','${key}',${ri},${gi})"
+      style="padding:6px 10px;cursor:pointer;font-size:11px;border-bottom:1px solid #f1f5f9;"
+      onmouseover="this.style.background='var(--blue-pale)'" onmouseout="this.style.background=''">
+      <div style="font-weight:600;">${p.display}</div>
+      <div style="font-size:10px;color:var(--muted);">${p.phone}</div>
+    </div>`;
+  }).join('');
+}
+
+function selectNotifProv(gk, key, ri, provIdx) {
+  const p = (window._spProviders||[])[provIdx];
+  if (!p) return;
+  window._patientProviders[gk] = {...p};
+  document.getElementById(`npi_${gk}`).value = p.display;
+  document.getElementById(`npi_${gk}`).style.borderColor = '#16a34a';
+  document.getElementById(`nph_${gk}`).textContent = p.phone;
+  document.getElementById(`ndd_${gk}`).style.display = 'none';
+}
+
+function generateGroupMessage(key) {
+  const rows = _notifData[key] || [];
+  const selected = window._selectedOrders[key] || new Set();
+  if (selected.size === 0) {
+    alert('Please select at least one order for this patient.');
+    return;
+  }
+  const selectedRows = [...selected].map(i => rows[i]);
+  const pt = rows[0];
+  const nameParts = pt.name.split(',');
+  const lastName = (nameParts[0]||'').trim();
+  const firstName = (nameParts[1]||'').trim().split(' ')[0];
+  const femaleNames = ['MARIA','ANA','ROSA','PATRICIA','GLORIA','CARMEN','DIANA','MARTHA',
+    'JESSICA','JENNIFER','LAURA','SANDRA','LINDA','BARBARA','ELIZABETH','SUSAN','KAREN',
+    'LISA','NANCY','BETTY','HILDA','IRENE','ANGELICA','FRANCISCA','BLANCA','YOLANDA',
+    'EVANGELINA','NORMA','OLGA','GRACIELA','MARICELA','VANESSA','CHELSEA','AIDA',
+    'FELICIANA','CAROL','SHEILA','ROSA','CARRIE','SHELLY'];
+  const isFemale = femaleNames.includes(firstName.toUpperCase());
+  const salutation = isFemale ? 'Ms.' : 'Mr.';
+  const greeting = firstName ? `${firstName} ${lastName}` : lastName;
+
+  // Build order details
+  let orderLines = [];
+  selectedRows.forEach((r, idx) => {
+    const gk = `${key}_${[...selected][idx]}`;
+    const prov = window._patientProviders[gk];
+    const specialty = r.specialty || 'your referral';
+    const provName = prov ? prov.display : (r.provAbbr || 'the provider');
+    const provPhone = prov ? prov.phone : '';
+    if (provPhone) {
+      orderLines.push(`your ${specialty} order has been sent to ${provName} (${provPhone})`);
+    } else {
+      orderLines.push(`your ${specialty} order has been sent to ${provName}`);
+    }
+  });
+
+  let orderText = '';
+  if (orderLines.length === 1) {
+    orderText = `${orderLines[0]}. Please call them to schedule your appointment.`;
+  } else {
+    const last = orderLines.pop();
+    orderText = `the following orders have been approved and sent: ${orderLines.join('; ')}, and ${last}. Please call each provider to schedule your appointments.`;
+  }
+
+  const msg = `Hi ${salutation} ${greeting}, I'm writing from Dr. White's office. I'd like to inform you that ${orderText} Thank you and have a great day!`;
+
+  // Store context for mark-as-notified
+  window._pendingNotif = { key, selectedRows: [...selected].map(i => rows[i]), selectedIndices: [...selected] };
+
+  document.getElementById('msgPatientLabel').textContent = `${pt.name}  ·  ${pt.phone}  ·  ${selected.size} order(s)`;
+  document.getElementById('msgText').value = msg;
+  document.getElementById('msgModal').style.display = 'flex';
+  document.getElementById('copiedLabel').style.display = 'none';
+  document.getElementById('markNotifiedBtn').style.display = 'inline-flex';
+  document.getElementById('markNotifiedStatus').textContent = '';
+}
+
+function closeMsg() { document.getElementById('msgModal').style.display = 'none'; }
+
+function copyMsg() {
+  navigator.clipboard.writeText(document.getElementById('msgText').value).then(() => {
+    const lbl = document.getElementById('copiedLabel');
+    lbl.style.display = 'block';
+    setTimeout(() => lbl.style.display = 'none', 2000);
+  });
+}
+
+async function markAsNotified() {
+  const ctx = window._pendingNotif;
+  if (!ctx) return;
+  const btn = document.getElementById('markNotifiedBtn');
+  btn.disabled = true; btn.textContent = 'Saving...';
+  const statusEl = document.getElementById('markNotifiedStatus');
+
+  try {
+    const token = await getToken();
+    const today = new Date();
+    const dateStr = `${today.getMonth()+1}/${today.getDate()}/${today.getFullYear()}`;
+    const notifText = `NOTIFIED VIA TEXT — ${dateStr} ${_userInitials}`;
+
+    // Group rows by source sheet
+    const bySheet = { Referrals: [], Imaging: [] };
+    ctx.selectedRows.forEach(r => bySheet[r.source].push(r));
+
+    for (const [source, rows] of Object.entries(bySheet)) {
+      if (!rows.length) continue;
+      const sheetName = source === 'Imaging' ? SHEET_NAME_IMAGING : SHEET_NAME;
+
+      // First, get current used range to find/create Text Message column
+      const usedResp = await fetch(
+        `https://graph.microsoft.com/v1.0/drives/${DRIVE_ID}/items/${FILE_ID}/workbook/worksheets/${encodeURIComponent(sheetName)}/usedRange`,
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      const usedData = await usedResp.json();
+      const headers = (usedData.values && usedData.values[0]) ? usedData.values[0].map(h => (h||'').toString().toLowerCase()) : [];
+      let textMsgColIdx = headers.findIndex(h => h.includes('text'));
+
+      // If column doesn't exist, create header
+      if (textMsgColIdx < 0) {
+        textMsgColIdx = headers.length;
+        const colLetter = colIndexToLetter(textMsgColIdx);
+        await fetch(
+          `https://graph.microsoft.com/v1.0/drives/${DRIVE_ID}/items/${FILE_ID}/workbook/worksheets/${encodeURIComponent(sheetName)}/range(address='${colLetter}1')`,
+          {
+            method: 'PATCH',
+            headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+            body: JSON.stringify({ values: [['Text Message']] })
+          }
+        );
+      }
+
+      // Write notification to each selected row
+      for (const row of rows) {
+        const colLetter = colIndexToLetter(textMsgColIdx);
+        const cellAddr = `${colLetter}${row.rowIndex}`;
+        await fetch(
+          `https://graph.microsoft.com/v1.0/drives/${DRIVE_ID}/items/${FILE_ID}/workbook/worksheets/${encodeURIComponent(sheetName)}/range(address='${cellAddr}')`,
+          {
+            method: 'PATCH',
+            headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+            body: JSON.stringify({ values: [[notifText]] })
+          }
+        );
+      }
+    }
+
+    statusEl.textContent = `✓ Marked as notified (${_userInitials})`;
+    statusEl.style.color = 'var(--green)';
+    btn.textContent = '✓ Marked';
+    // Remove from list after marking
+    setTimeout(() => {
+      const key = ctx.key;
+      ctx.selectedIndices.sort((a,b) => b-a).forEach(i => {
+        if (_notifData[key]) _notifData[key].splice(i, 1);
+      });
+      if (_notifData[key] && _notifData[key].length === 0) delete _notifData[key];
+      _notifFiltered = {..._notifData};
+      document.getElementById('notifCount').textContent = `${Object.keys(_notifData).length} patients pending`;
+      renderNotifications();
+      closeMsg();
+    }, 1500);
+  } catch(e) {
+    statusEl.textContent = 'Error: ' + e.message;
+    statusEl.style.color = 'var(--red)';
+    btn.disabled = false; btn.textContent = 'Mark as Notified';
+  }
+}
+
+function colIndexToLetter(idx) {
+  let letter = '';
+  idx += 1;
+  while (idx > 0) {
+    let rem = idx % 26;
+    if (rem === 0) { rem = 26; }
+    letter = String.fromCharCode(64 + rem) + letter;
+    idx = Math.floor((idx - rem) / 26);
+  }
+  return letter;
+}
+
+document.addEventListener('click', e => {
+  if (!e.target.id || (!e.target.id.startsWith('npi_') && !e.target.closest('[id^="ndd_"]'))) {
+    document.querySelectorAll('[id^="ndd_"]').forEach(d => d.style.display='none');
+  }
+});
+
 
 function matchNotifProvider(abbr) {
   // Returns { match, ambiguous, candidates }
