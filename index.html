@@ -1858,17 +1858,21 @@ function generateGroupMessage(key) {
   }
 
   const pt = rows[0];
+  const toTitle = s => (s||'').toLowerCase().replace(/\b\w/g, c => c.toUpperCase());
   const nameParts = pt.name.split(',');
-  const lastName  = (nameParts[0]||'').trim();
-  const firstName = (nameParts[1]||'').trim().split(' ')[0];
+  const lastNameRaw  = (nameParts[0]||'').trim();
+  const firstNameRaw = (nameParts[1]||'').trim().split(' ')[0]; // first word only
+  const firstName = toTitle(firstNameRaw);
+  const lastName  = toTitle(lastNameRaw);
   const femaleNames = ['MARIA','ANA','ROSA','PATRICIA','GLORIA','CARMEN','DIANA','MARTHA',
     'JESSICA','JENNIFER','LAURA','SANDRA','LINDA','BARBARA','ELIZABETH','SUSAN','KAREN',
     'LISA','NANCY','BETTY','HILDA','IRENE','ANGELICA','FRANCISCA','BLANCA','YOLANDA',
     'EVANGELINA','NORMA','OLGA','GRACIELA','MARICELA','VANESSA','CHELSEA','AIDA',
     'FELICIANA','CAROL','SHEILA','CARRIE','SHELLY'];
-  const isFemale  = femaleNames.includes(firstName.toUpperCase());
+  const isFemale  = femaleNames.includes(firstNameRaw.toUpperCase());
   const salutation = isFemale ? 'Ms.' : 'Mr.';
-  const greeting   = firstName ? `${firstName} ${lastName}` : lastName;
+  // Use last name only with salutation (more formal): "Mr. Abo Alkhil"
+  const greeting   = lastName;
 
   // Build selected rows
   const selectedRows = [...selected].map(i => ({
@@ -1888,19 +1892,23 @@ function generateGroupMessage(key) {
   const orderLines = Object.values(provGroups).map(({ prov, specialties }) => {
     const provName  = prov ? prov.display : 'the provider';
     const provPhone = prov ? formatPhone(prov.phone) : '';
-    // Format specialties list
+    // Format specialties list with correct singular/plural verb
     let specText = '';
+    let verb = '';
     if (specialties.length === 1) {
       specText = `your ${specialties[0]} order`;
+      verb = 'has';
     } else if (specialties.length === 2) {
       specText = `your ${specialties[0]} and ${specialties[1]} orders`;
+      verb = 'have';
     } else {
       const last = specialties[specialties.length - 1];
       specText = `your ${specialties.slice(0,-1).join(', ')}, and ${last} orders`;
+      verb = 'have';
     }
     // Provider name + phone tightly joined with "at"
     const provPart = provPhone ? `${provName} at ${provPhone}` : provName;
-    return `${specText} have been sent to ${provPart}`;
+    return `${specText} ${verb} been sent to ${provPart}`;
   });
 
   // ── Build final message ──
