@@ -1465,11 +1465,20 @@ async function loadNotifications() {
     const isRedRow   = (info) => isRedStyle(info.style)   || isRedRGB(info.color)   || isRedRGB(info.patternColor);
 
     const fetchRowColors = async (sheetName, totalRows) => {
+      // Skip color detection for very large sheets to avoid timeout
+      if (totalRows > 500) {
+        console.warn(`[DEBUG] ${sheetName} has ${totalRows} rows — skipping color detection, using text-based filter only`);
+        window._lastColorError = `${sheetName}: too many rows (${totalRows}) for color detection — using text fallback`;
+        return [];
+      }
       try {
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), 15000); // 15s timeout
         const resp = await fetch(
           `https://graph.microsoft.com/v1.0/drives/${DRIVE_ID}/items/${FILE_ID}/workbook/worksheets/${encodeURIComponent(sheetName)}/range(address='A1:A${totalRows}')/getCellProperties`,
           {
             method: 'POST',
+            signal: controller.signal,
             headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
             body: JSON.stringify({
               cellPropertiesLoadOptions: {
@@ -1479,17 +1488,15 @@ async function loadNotifications() {
             })
           }
         );
+        clearTimeout(timer);
         if (!resp.ok) {
-          console.error(`[DEBUG] getCellProperties failed for ${sheetName}:`, resp.status, await resp.text());
-          window._lastColorError = `${sheetName}: HTTP ${resp.status}`;
+          console.error(`[DEBUG] getCellProperties failed for ${sheetName}:`, resp.status);
           return [];
         }
         const data = await resp.json();
-        // DEBUG: log first 5 non-header rows to inspect what API returns
         const sample = (data.value || []).slice(1, 6);
         console.log(`[DEBUG] ${sheetName} - first 5 data rows:`, JSON.stringify(sample, null, 2));
         window[`_debugColors_${sheetName}`] = sample;
-
         return (data.value || []).map(rowArr => {
           const cell = rowArr?.[0] || {};
           return {
@@ -1499,8 +1506,7 @@ async function loadNotifications() {
           };
         });
       } catch(e) {
-        console.error('[DEBUG] Color fetch exception for', sheetName, e);
-        window._lastColorError = `${sheetName}: ${e.message}`;
+        console.warn('[DEBUG] Color fetch failed/timeout for', sheetName, e.message);
         return [];
       }
     };
@@ -1536,11 +1542,18 @@ async function loadNotifications() {
         matchedProv: null,
       })).filter(r => {
         if (!r.name) return false;
-        if (r.textMsg) return false;             // already notified via app
+        if (r.textMsg) return false;
+        // Color filtering (when available) — exclude clearly-done colors
         if (isGreenRow(r.rowColor))  return false;
         if (isYellowRow(r.rowColor)) return false;
         if (isRedRow(r.rowColor))    return false;
-        return isBlueRow(r.rowColor);            // only blue → needs notification
+        // If color shows blue → definitely needs notification
+        if (isBlueRow(r.rowColor)) return true;
+        // No reliable color signal → fall back to text-based check
+        const notesUpper = r.notes.toUpperCase();
+        return notesUpper.includes('INFORM') &&
+          !notesUpper.includes('INFORMED') &&
+          !notesUpper.includes('NOTIFIED');
       });
     };
 
