@@ -1479,8 +1479,17 @@ async function loadNotifications() {
             })
           }
         );
-        if (!resp.ok) return [];
+        if (!resp.ok) {
+          console.error(`[DEBUG] getCellProperties failed for ${sheetName}:`, resp.status, await resp.text());
+          window._lastColorError = `${sheetName}: HTTP ${resp.status}`;
+          return [];
+        }
         const data = await resp.json();
+        // DEBUG: log first 5 non-header rows to inspect what API returns
+        const sample = (data.value || []).slice(1, 6);
+        console.log(`[DEBUG] ${sheetName} - first 5 data rows:`, JSON.stringify(sample, null, 2));
+        window[`_debugColors_${sheetName}`] = sample;
+
         return (data.value || []).map(rowArr => {
           const cell = rowArr?.[0] || {};
           return {
@@ -1490,7 +1499,8 @@ async function loadNotifications() {
           };
         });
       } catch(e) {
-        console.warn('Color fetch failed for', sheetName, e);
+        console.error('[DEBUG] Color fetch exception for', sheetName, e);
+        window._lastColorError = `${sheetName}: ${e.message}`;
         return [];
       }
     };
@@ -1638,7 +1648,8 @@ function renderNotifications() {
   const list = document.getElementById('notifList');
   const groups = Object.entries(_notifFiltered);
   if (!groups.length) {
-    list.innerHTML = '<div style="padding:40px;text-align:center;color:var(--muted);">No pending notifications found.</div>';
+    const debugInfo = window._debugColors_Referrals ? `<details style="margin-top:16px;text-align:left;font-size:10px;color:var(--muted);"><summary style="cursor:pointer;">Debug: API response samples</summary><pre style="font-size:9px;overflow:auto;max-height:300px;background:#f1f5f9;padding:8px;border-radius:4px;">Referrals sample:\n${JSON.stringify(window._debugColors_Referrals, null, 2)}\n\nImaging sample:\n${JSON.stringify(window._debugColors_Imaging || [], null, 2)}\n\nLast error: ${window._lastColorError || 'none'}</pre></details>` : '';
+    list.innerHTML = '<div style="padding:40px;text-align:center;color:var(--muted);">No pending notifications found.' + debugInfo + '</div>';
     return;
   }
 
