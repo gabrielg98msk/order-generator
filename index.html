@@ -1409,7 +1409,56 @@ async function loadNotifications() {
     const refData = refResp.ok ? await refResp.json() : null;
     const imgData = imgResp.ok ? await imgResp.json() : null;
 
-    const parseSheet = (data, source) => {
+    // Color helpers
+    const parseHex = (hex) => {
+      if (!hex || /^#?[fF]{6}$/.test(hex)) return null;
+      const h = hex.replace('#','');
+      if (h.length !== 6) return null;
+      return {
+        r: parseInt(h.slice(0,2), 16),
+        g: parseInt(h.slice(2,4), 16),
+        b: parseInt(h.slice(4,6), 16)
+      };
+    };
+    const isBlueColor = (hex) => {
+      const c = parseHex(hex); if (!c) return false;
+      return c.b > c.r + 20 && c.b >= c.g - 10;          // blue dominant
+    };
+    const isGreenColor = (hex) => {
+      const c = parseHex(hex); if (!c) return false;
+      return c.g > c.r + 10 && c.g > c.b + 10;           // green dominant
+    };
+    const isYellowColor = (hex) => {
+      const c = parseHex(hex); if (!c) return false;
+      return c.r > 180 && c.g > 180 && c.b < c.r - 30 && c.b < c.g - 30;  // R&G high, B low
+    };
+    const isRedColor = (hex) => {
+      const c = parseHex(hex); if (!c) return false;
+      return c.r > c.g + 40 && c.r > c.b + 40;           // red dominant
+    };
+
+    const fetchRowColors = async (sheetName, totalRows) => {
+      try {
+        const resp = await fetch(
+          `https://graph.microsoft.com/v1.0/drives/${DRIVE_ID}/items/${FILE_ID}/workbook/worksheets/${encodeURIComponent(sheetName)}/range(address='A1:A${totalRows}')/getCellProperties`,
+          {
+            method: 'POST',
+            headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+            body: JSON.stringify({ cellPropertiesLoadOptions: { format: { fill: { color: true } } } })
+          }
+        );
+        if (!resp.ok) return [];
+        const data = await resp.json();
+        return (data.value || []).map(rowArr => {
+          return rowArr?.[0]?.format?.fill?.color || '';
+        });
+      } catch(e) {
+        console.warn('Color fetch failed for', sheetName, e);
+        return [];
+      }
+    };
+
+    const parseSheet = (data, source, colors) => {
       if (!data || !data.values || data.values.length < 2) return [];
       const rows = data.values;
       const H = rows[0].map(h => (h||'').toLowerCase());
@@ -1424,7 +1473,7 @@ async function loadNotifications() {
         status:   H.findIndex(h => h.includes('status')),
       };
       return rows.slice(1).map((r, i) => ({
-        rowIndex: i + 2, // 1-based, +1 for header
+        rowIndex: i + 2,
         source,
         name:      (r[idx.name]    ||'').toString().trim(),
         phone:     (r[idx.phone]   ||'').toString().trim(),
@@ -1434,18 +1483,25 @@ async function loadNotifications() {
         notes:     (r[idx.notes]   ||'').toString().trim(),
         status:    (r[idx.status]  ||'').toString().trim(),
         textMsg:   idx.textmsg >= 0 ? (r[idx.textmsg]||'').toString().trim() : '',
-        textMsgColIdx: idx.textmsg >= 0 ? idx.textmsg : H.length, // new col if not exists
+        textMsgColIdx: idx.textmsg >= 0 ? idx.textmsg : H.length,
         totalCols: H.length,
-        matchedProv: null, // filled below
-      })).filter(r =>
-        r.name &&
-        r.notes.toUpperCase().includes('INFORM') &&
-        !r.textMsg // not already notified
-      );
+        rowColor:  colors[i + 1] || '',  // +1 because colors[0] is header
+        matchedProv: null,
+      })).filter(r => {
+        if (!r.name) return false;
+        // Only blue rows appear — and only if not already notified via app
+        return isBlueColor(r.rowColor) && !r.textMsg;
+      });
     };
 
-    const refRows = parseSheet(refData, 'Referrals');
-    const imgRows = parseSheet(imgData, 'Imaging');
+    // Fetch row colors for both sheets in parallel
+    const [refColors, imgColors] = await Promise.all([
+      refData?.values?.length ? fetchRowColors(SHEET_NAME, refData.values.length) : Promise.resolve([]),
+      imgData?.values?.length ? fetchRowColors(SHEET_NAME_IMAGING, imgData.values.length) : Promise.resolve([])
+    ]);
+
+    const refRows = parseSheet(refData, 'Referrals', refColors);
+    const imgRows = parseSheet(imgData, 'Imaging', imgColors);
     const all = [...refRows, ...imgRows];
 
     // Auto-match providers
