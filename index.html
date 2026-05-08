@@ -1409,7 +1409,7 @@ async function loadNotifications() {
     const refData = refResp.ok ? await refResp.json() : null;
     const imgData = imgResp.ok ? await imgResp.json() : null;
 
-    // Color helpers
+    // Color helpers — checks both direct fill color and Excel style names
     const parseHex = (hex) => {
       if (!hex || /^#?[fF]{6}$/.test(hex)) return null;
       const h = hex.replace('#','');
@@ -1420,22 +1420,49 @@ async function loadNotifications() {
         b: parseInt(h.slice(4,6), 16)
       };
     };
-    const isBlueColor = (hex) => {
+    const isBlueRGB = (hex) => {
       const c = parseHex(hex); if (!c) return false;
-      return c.b > c.r + 20 && c.b >= c.g - 10;          // blue dominant
+      return c.b > c.r + 20 && c.b >= c.g - 10;
     };
-    const isGreenColor = (hex) => {
+    const isGreenRGB = (hex) => {
       const c = parseHex(hex); if (!c) return false;
-      return c.g > c.r + 10 && c.g > c.b + 10;           // green dominant
+      return c.g > c.r + 10 && c.g > c.b + 10;
     };
-    const isYellowColor = (hex) => {
+    const isYellowRGB = (hex) => {
       const c = parseHex(hex); if (!c) return false;
-      return c.r > 180 && c.g > 180 && c.b < c.r - 30 && c.b < c.g - 30;  // R&G high, B low
+      return c.r > 180 && c.g > 180 && c.b < c.r - 30 && c.b < c.g - 30;
     };
-    const isRedColor = (hex) => {
+    const isRedRGB = (hex) => {
       const c = parseHex(hex); if (!c) return false;
-      return c.r > c.g + 40 && c.r > c.b + 40;           // red dominant
+      return c.r > c.g + 40 && c.r > c.b + 40;
     };
+    // Excel style names — Office default theme: Accent1=blue, Accent2=orange/red,
+    // Accent3=gray, Accent4=blue (bright), Accent5=cyan, Accent6=green
+    const isBlueStyle = (s) => {
+      if (!s) return false;
+      const u = s.toUpperCase().replace(/\s/g,'');
+      // User confirmed: 40% - Accent4 = blue (their "needs notification" marker)
+      return /ACCENT[14]/.test(u) || u.includes('GOOD')===false && (u.includes('BLUE') || u.includes('INPUT') || u.includes('HYPERLINK'));
+    };
+    const isGreenStyle = (s) => {
+      if (!s) return false;
+      const u = s.toUpperCase();
+      return u.includes('GOOD') || /ACCENT6/.test(u.replace(/\s/g,'')) || u.includes('GREEN');
+    };
+    const isYellowStyle = (s) => {
+      if (!s) return false;
+      const u = s.toUpperCase();
+      return u.includes('NEUTRAL') || u.includes('NOTE') || u.includes('YELLOW');
+    };
+    const isRedStyle = (s) => {
+      if (!s) return false;
+      const u = s.toUpperCase();
+      return u.includes('BAD') || /ACCENT2/.test(u.replace(/\s/g,'')) || u.includes('WARNING') || u.includes('RED');
+    };
+    const isBlueRow  = (info) => isBlueStyle(info.style)  || isBlueRGB(info.color)  || isBlueRGB(info.patternColor);
+    const isGreenRow = (info) => isGreenStyle(info.style) || isGreenRGB(info.color) || isGreenRGB(info.patternColor);
+    const isYellowRow= (info) => isYellowStyle(info.style)|| isYellowRGB(info.color)|| isYellowRGB(info.patternColor);
+    const isRedRow   = (info) => isRedStyle(info.style)   || isRedRGB(info.color)   || isRedRGB(info.patternColor);
 
     const fetchRowColors = async (sheetName, totalRows) => {
       try {
@@ -1444,13 +1471,23 @@ async function loadNotifications() {
           {
             method: 'POST',
             headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-            body: JSON.stringify({ cellPropertiesLoadOptions: { format: { fill: { color: true } } } })
+            body: JSON.stringify({
+              cellPropertiesLoadOptions: {
+                format: { fill: { color: true, pattern: true, patternColor: true } },
+                style: true
+              }
+            })
           }
         );
         if (!resp.ok) return [];
         const data = await resp.json();
         return (data.value || []).map(rowArr => {
-          return rowArr?.[0]?.format?.fill?.color || '';
+          const cell = rowArr?.[0] || {};
+          return {
+            color:        cell.format?.fill?.color || '',
+            patternColor: cell.format?.fill?.patternColor || '',
+            style:        cell.style || ''
+          };
         });
       } catch(e) {
         console.warn('Color fetch failed for', sheetName, e);
@@ -1485,12 +1522,15 @@ async function loadNotifications() {
         textMsg:   idx.textmsg >= 0 ? (r[idx.textmsg]||'').toString().trim() : '',
         textMsgColIdx: idx.textmsg >= 0 ? idx.textmsg : H.length,
         totalCols: H.length,
-        rowColor:  colors[i + 1] || '',  // +1 because colors[0] is header
+        rowColor:  colors[i + 1] || { color:'', patternColor:'', style:'' },
         matchedProv: null,
       })).filter(r => {
         if (!r.name) return false;
-        // Only blue rows appear — and only if not already notified via app
-        return isBlueColor(r.rowColor) && !r.textMsg;
+        if (r.textMsg) return false;             // already notified via app
+        if (isGreenRow(r.rowColor))  return false;
+        if (isYellowRow(r.rowColor)) return false;
+        if (isRedRow(r.rowColor))    return false;
+        return isBlueRow(r.rowColor);            // only blue → needs notification
       });
     };
 
