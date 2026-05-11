@@ -209,7 +209,7 @@ header p{font-size:11px;color:#94a3b8;margin-top:1px;}
         <div class="field"><label>Date of Birth</label><input id="dob" placeholder="M/D/YYYY"></div>
         <div class="field"><label>Order Date</label><input id="orderDate"></div>
       </div>
-      <div class="field"><label>Phone Number</label><input id="phone" placeholder="(619) 000-0000"></div>
+      <div class="field"><label>Phone Number</label><input id="phone" placeholder="(619) 000-0000" onblur="this.value=formatPhoneInput(this.value)"></div>
       <div class="field"><label>Insurance</label><input id="insurance" placeholder="CHG, MOLINA, PMG…" oninput="this.value=this.value.toUpperCase()"></div>
       <div class="r2">
         <div class="field"><label>Subscriber No.</label><input id="subNo" placeholder="Sub number"></div>
@@ -241,8 +241,8 @@ header p{font-size:11px;color:#94a3b8;margin-top:1px;}
       <div class="field"><label>To / Provider Name</label><input id="provName" placeholder="Provider or facility name"></div>
       <div class="field"><label>Address</label><input id="provAddr" placeholder="Full address"></div>
       <div class="r2">
-        <div class="field"><label>Phone</label><input id="provPhone" placeholder="(000) 000-0000"></div>
-        <div class="field"><label>Fax</label><input id="provFax" placeholder="(000) 000-0000"></div>
+        <div class="field"><label>Phone</label><input id="provPhone" placeholder="(000) 000-0000" onblur="this.value=formatPhoneInput(this.value)"></div>
+        <div class="field"><label>Fax</label><input id="provFax" placeholder="(000) 000-0000" onblur="this.value=formatPhoneInput(this.value)"></div>
       </div>
       <!-- Save provider button -->
       <div style="margin-top:12px;padding-top:12px;border-top:1px solid var(--border);">
@@ -261,14 +261,14 @@ header p{font-size:11px;color:#94a3b8;margin-top:1px;}
       <div class="card-title">Order Details</div>
       <div class="r2">
         <div class="field">
-          <label>CPT Code(s) — type + Enter to add</label>
+          <label>CPT Code(s) <span style="color:#dc2626;">*</span> — type + Enter to add</label>
           <div class="tag-wrap" onclick="document.getElementById('cptIn').focus()">
             <input class="tag-input" id="cptIn" placeholder="e.g. 99204" onkeydown="handleKey(event,'cpt')">
           </div>
           <div class="chips" id="cptChips"></div>
         </div>
         <div class="field">
-          <label>ICD-10 Code(s) — type + Enter to add</label>
+          <label>ICD-10 Code(s) <span style="color:#dc2626;">*</span> — type + Enter to add</label>
           <div class="tag-wrap" onclick="document.getElementById('icdIn').focus()">
             <input class="tag-input" id="icdIn" placeholder="e.g. M54.2" onkeydown="handleKey(event,'icd')">
           </div>
@@ -369,11 +369,13 @@ header p{font-size:11px;color:#94a3b8;margin-top:1px;}
             <div>
               <label style="font-size:10px;font-weight:600;color:var(--muted);display:block;margin-bottom:3px;">Phone</label>
               <input id="npPhone" placeholder="(000) 000-0000"
+                onblur="this.value=formatPhoneInput(this.value)"
                 style="width:100%;padding:6px 8px;border:1px solid var(--border);border-radius:5px;font-size:12px;font-family:inherit;outline:none;">
             </div>
             <div>
               <label style="font-size:10px;font-weight:600;color:var(--muted);display:block;margin-bottom:3px;">Fax</label>
               <input id="npFax" placeholder="(000) 000-0000"
+                onblur="this.value=formatPhoneInput(this.value)"
                 style="width:100%;padding:6px 8px;border:1px solid var(--border);border-radius:5px;font-size:12px;font-family:inherit;outline:none;">
             </div>
           </div>
@@ -1860,19 +1862,9 @@ function generateGroupMessage(key) {
   const pt = rows[0];
   const toTitle = s => (s||'').toLowerCase().replace(/\b\w/g, c => c.toUpperCase());
   const nameParts = pt.name.split(',');
-  const lastNameRaw  = (nameParts[0]||'').trim();
-  const firstNameRaw = (nameParts[1]||'').trim().split(' ')[0]; // first word only
-  const firstName = toTitle(firstNameRaw);
-  const lastName  = toTitle(lastNameRaw);
-  const femaleNames = ['MARIA','ANA','ROSA','PATRICIA','GLORIA','CARMEN','DIANA','MARTHA',
-    'JESSICA','JENNIFER','LAURA','SANDRA','LINDA','BARBARA','ELIZABETH','SUSAN','KAREN',
-    'LISA','NANCY','BETTY','HILDA','IRENE','ANGELICA','FRANCISCA','BLANCA','YOLANDA',
-    'EVANGELINA','NORMA','OLGA','GRACIELA','MARICELA','VANESSA','CHELSEA','AIDA',
-    'FELICIANA','CAROL','SHEILA','CARRIE','SHELLY'];
-  const isFemale  = femaleNames.includes(firstNameRaw.toUpperCase());
-  const salutation = isFemale ? 'Ms.' : 'Mr.';
-  // Use last name only with salutation (more formal): "Mr. Abo Alkhil"
-  const greeting   = lastName;
+  const lastName  = toTitle((nameParts[0]||'').trim());
+  const firstName = toTitle((nameParts[1]||'').trim());
+  const fullName  = firstName ? `${firstName} ${lastName}` : lastName;
 
   // Build selected rows
   const selectedRows = [...selected].map(i => ({
@@ -1923,7 +1915,7 @@ function generateGroupMessage(key) {
     closing = ' Please call each provider directly to schedule your appointments.';
   }
 
-  const msg = `Hi ${salutation} ${greeting}, I'm writing from Dr. White's office. I'd like to inform you that ${orderLines.length === 1 ? orderText : ''}${orderLines.length > 1 ? 'the following orders have been approved and sent. ' + orderText : ''}${closing} Thank you and have a great day!`;
+  const msg = `Hello, this message is for patient ${fullName}. I'm writing from Dr. White's office. I'd like to inform you that ${orderLines.length === 1 ? orderText : ''}${orderLines.length > 1 ? 'the following orders have been approved and sent. ' + orderText : ''}${closing} Thank you and have a great day!`;
 
   window._pendingNotif = {
     key,
