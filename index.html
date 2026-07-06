@@ -741,8 +741,8 @@ async function loadApp() {
     // Load providers, referrals, and imaging in parallel
     const provUrl = `https://graph.microsoft.com/v1.0/drives/${DRIVE_ID}/items/${PROVIDERS_FILE_ID}/workbook/worksheets/Providers/usedRange`;
     const [refResp, imgResp, provResp] = await Promise.all([
-      fetch(`https://graph.microsoft.com/v1.0/drives/${DRIVE_ID}/items/${FILE_ID}/workbook/worksheets/${encodeURIComponent(SHEET_NAME)}/usedRange`, { headers: { Authorization: `Bearer ${token}` } }),
-      fetch(`https://graph.microsoft.com/v1.0/drives/${DRIVE_ID}/items/${FILE_ID}/workbook/worksheets/${encodeURIComponent(SHEET_NAME_IMAGING)}/usedRange`, { headers: { Authorization: `Bearer ${token}` } }),
+      fetch(`https://graph.microsoft.com/v1.0/drives/${DRIVE_ID}/items/${FILE_ID}/workbook/worksheets/${encodeURIComponent(SHEET_NAME)}/range(address='A1:L5000')`, { headers: { Authorization: `Bearer ${token}` } }),
+      fetch(`https://graph.microsoft.com/v1.0/drives/${DRIVE_ID}/items/${FILE_ID}/workbook/worksheets/${encodeURIComponent(SHEET_NAME_IMAGING)}/range(address='A1:L5000')`, { headers: { Authorization: `Bearer ${token}` } }),
       fetch(provUrl, { headers: { Authorization: `Bearer ${token}` } })
     ]);
     if (!refResp.ok) throw new Error(`Referrals sheet error: ${refResp.status}`);
@@ -1404,8 +1404,8 @@ async function loadNotifications() {
 
     // Load both sheets in parallel
     const [refResp, imgResp] = await Promise.all([
-      fetch(`https://graph.microsoft.com/v1.0/drives/${DRIVE_ID}/items/${FILE_ID}/workbook/worksheets/${encodeURIComponent(SHEET_NAME)}/usedRange`, { headers: { Authorization: `Bearer ${token}` }}),
-      fetch(`https://graph.microsoft.com/v1.0/drives/${DRIVE_ID}/items/${FILE_ID}/workbook/worksheets/${encodeURIComponent(SHEET_NAME_IMAGING)}/usedRange`, { headers: { Authorization: `Bearer ${token}` }})
+      fetch(`https://graph.microsoft.com/v1.0/drives/${DRIVE_ID}/items/${FILE_ID}/workbook/worksheets/${encodeURIComponent(SHEET_NAME)}/range(address='A1:L5000')`, { headers: { Authorization: `Bearer ${token}` }}),
+      fetch(`https://graph.microsoft.com/v1.0/drives/${DRIVE_ID}/items/${FILE_ID}/workbook/worksheets/${encodeURIComponent(SHEET_NAME_IMAGING)}/range(address='A1:L5000')`, { headers: { Authorization: `Bearer ${token}` }})
     ]);
 
     const refData = refResp.ok ? await refResp.json() : null;
