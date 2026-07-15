@@ -1562,9 +1562,11 @@ async function loadNotifications() {
         if (isBlueRow(r.rowColor)) return true;
         // No reliable color signal → fall back to text-based check
         const notesUpper = r.notes.toUpperCase();
-        return notesUpper.includes('INFORM') &&
-          !notesUpper.includes('INFORMED') &&
-          !notesUpper.includes('NOTIFIED');
+        // Accept both correct spelling "INFORM" and common typo "INFROM"
+        const needsInform = notesUpper.includes('INFORM') || notesUpper.includes('INFROM');
+        // Already done — accept variants like INFORMED, INFROMED, NOTIFIED
+        const alreadyDone = notesUpper.includes('INFORMED') || notesUpper.includes('INFROMED') || notesUpper.includes('NOTIFIED');
+        return needsInform && !alreadyDone;
       });
     };
 
@@ -1577,26 +1579,6 @@ async function loadNotifications() {
     const refRows = parseSheet(refData, 'Referrals', refColors);
     const imgRows = parseSheet(imgData, 'Imaging', imgColors);
 
-    // DEBUG output — see what the app is finding
-    console.log('=== NOTIFICATION LOAD DEBUG ===');
-    console.log('Referrals raw rows:', refData?.values?.length || 0, '→ passed filter:', refRows.length);
-    console.log('Imaging raw rows:', imgData?.values?.length || 0, '→ passed filter:', imgRows.length);
-    if (imgData?.values?.length) {
-      console.log('Imaging headers:', imgData.values[0]);
-      // Show the first 3 non-header imaging rows and why they were filtered
-      const H = imgData.values[0].map(h => (h||'').toLowerCase());
-      const nameIdx = H.findIndex(h => h.includes('name') && !h.includes('provider') && !h.includes('rendering'));
-      const notesIdx = H.findIndex(h => h.includes('notes'));
-      const textIdx = H.findIndex(h => h.includes('text'));
-      console.log('Column indices:', {name:nameIdx, notes:notesIdx, textMsg:textIdx});
-      // Sample some rows around 1815 (where blue starts based on your screenshot)
-      const samples = imgData.values.slice(1814, 1820);
-      console.log('Sample imaging rows (1815-1820):');
-      samples.forEach((r, i) => {
-        console.log(`  Row ${1815+i}: name="${r[nameIdx]}", notes="${r[notesIdx]}", text="${textIdx>=0?r[textIdx]:'(no col)'}"`);
-      });
-    }
-    console.log('===============================');
 
     const all = [...refRows, ...imgRows];
 
