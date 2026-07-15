@@ -745,7 +745,16 @@ async function loadApp() {
       fetch(`https://graph.microsoft.com/v1.0/drives/${DRIVE_ID}/items/${FILE_ID}/workbook/worksheets/${encodeURIComponent(SHEET_NAME_IMAGING)}/range(address='A1:L5000')`, { headers: { Authorization: `Bearer ${token}` } }),
       fetch(provUrl, { headers: { Authorization: `Bearer ${token}` } })
     ]);
-    if (!refResp.ok) throw new Error(`Referrals sheet error: ${refResp.status}`);
+    if (!refResp.ok) {
+      let errBody = '';
+      try {
+        const errJson = await refResp.json();
+        errBody = errJson.error?.message || JSON.stringify(errJson.error || errJson);
+      } catch(_) {
+        try { errBody = await refResp.text(); } catch(_) { errBody = ''; }
+      }
+      throw new Error(`Referrals sheet error: HTTP ${refResp.status}\n\nGraph API said: ${errBody}\n\nURL attempted: /worksheets/${SHEET_NAME}/range(address='A1:L5000')`);
+    }
     const refData = await refResp.json();
     if (refData.values && refData.values.length > 1) {
       patientData = parseRows(refData.values);
@@ -769,7 +778,7 @@ async function loadApp() {
     initApp();
   } catch(e) {
     console.error(e);
-    alert('Error loading data: ' + e.message + '\n\nMake sure you are signed in with your SDNeurosurgery account.');
+    alert('Error loading data:\n\n' + e.message + '\n\n---\n\nIf the file is open in Excel, try closing it and refreshing.\nOtherwise sign out/in with your SDNeurosurgery account.');
     showScreen('login');
   }
 }
@@ -1567,6 +1576,28 @@ async function loadNotifications() {
 
     const refRows = parseSheet(refData, 'Referrals', refColors);
     const imgRows = parseSheet(imgData, 'Imaging', imgColors);
+
+    // DEBUG output — see what the app is finding
+    console.log('=== NOTIFICATION LOAD DEBUG ===');
+    console.log('Referrals raw rows:', refData?.values?.length || 0, '→ passed filter:', refRows.length);
+    console.log('Imaging raw rows:', imgData?.values?.length || 0, '→ passed filter:', imgRows.length);
+    if (imgData?.values?.length) {
+      console.log('Imaging headers:', imgData.values[0]);
+      // Show the first 3 non-header imaging rows and why they were filtered
+      const H = imgData.values[0].map(h => (h||'').toLowerCase());
+      const nameIdx = H.findIndex(h => h.includes('name') && !h.includes('provider') && !h.includes('rendering'));
+      const notesIdx = H.findIndex(h => h.includes('notes'));
+      const textIdx = H.findIndex(h => h.includes('text'));
+      console.log('Column indices:', {name:nameIdx, notes:notesIdx, textMsg:textIdx});
+      // Sample some rows around 1815 (where blue starts based on your screenshot)
+      const samples = imgData.values.slice(1814, 1820);
+      console.log('Sample imaging rows (1815-1820):');
+      samples.forEach((r, i) => {
+        console.log(`  Row ${1815+i}: name="${r[nameIdx]}", notes="${r[notesIdx]}", text="${textIdx>=0?r[textIdx]:'(no col)'}"`);
+      });
+    }
+    console.log('===============================');
+
     const all = [...refRows, ...imgRows];
 
     // Auto-match providers
